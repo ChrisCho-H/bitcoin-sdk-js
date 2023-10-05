@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "allowJs": false,
+        "target": "esNext",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,    
+        "noFallthroughCasesInSwitch": true,
+        "forceConsistentCasingInFileNames": true,
+        "rootDir": "./",
+        "esModuleInterop": true,
+        "declaration": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true,    
+    },
+    "include": ["src/**/*", "test/**/*"],
+    "exclude": ["node_modules", "dist"],
+  }
