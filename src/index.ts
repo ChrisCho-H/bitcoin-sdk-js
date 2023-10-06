@@ -39,12 +39,18 @@ export class Transaction {
   locktime: string;
   inputs: UTXO[];
   outputs: Target[];
+  private _inputScriptArr: string[];
+  private _outputScript: string;
+  private _unsignedTx: string;
 
   constructor() {
     this.inputs = [];
     this.outputs = [];
     this.version = "01000000";
     this.locktime = "00000000";
+    this._inputScriptArr = [];
+    this._outputScript = "";
+    this._unsignedTx = "";
   }
 
   public addInput = async (utxo: UTXO): Promise<void> => {
@@ -55,16 +61,49 @@ export class Transaction {
     this.outputs.push(target);
   };
 
-  public sign = async (pubkey: string, privkey: string): Promise<string> => {
+  public signAll = async (pubkey: string, privkey: string): Promise<void> => {
+    for (let i = 0; i < this.inputs.length; i++) {
+      await this.signInput(pubkey, privkey, i);
+    }
+  };
+
+  public signInput = async (
+    pubkey: string,
+    privkey: string,
+    index: number
+  ): Promise<void> => {
+    const unsignedTx = await this._finalize();
+    await this._sign(pubkey, privkey, unsignedTx, index);
+  };
+
+  public getSignedHex = async (): Promise<string> => {
+    return (
+      this.version +
+      this._inputScriptArr.join("") +
+      this._outputScript +
+      this.locktime
+    );
+  };
+
+  private _finalize = async (): Promise<string> => {
+    // if already finalized, just return
+    if (this._unsignedTx.length !== 0) return this._unsignedTx;
+
     const inputScript: string[] = await this._finalizeInputs();
     const outputScript: string = await this._finalizeOutputs();
-    return await this._sign(pubkey, privkey, inputScript, outputScript);
+
+    this._unsignedTx =
+      this.version + inputScript.join("") + outputScript + this.locktime;
+
+    return this._unsignedTx;
   };
 
   private _finalizeInputs = async (): Promise<string[]> => {
-    let inputScriptArr: string[] = [];
+    // if already finalized, just return
+    if (this._inputScriptArr.length !== 0) return this._inputScriptArr;
+    // input count in varInt
     const inputCount: string = await this._getVarInt(this.inputs.length);
-    inputScriptArr.push(inputCount);
+    this._inputScriptArr.push(inputCount);
     // get input script hex
     for (const input of this.inputs) {
       /* 
@@ -78,17 +117,22 @@ export class Transaction {
         "00" + // will be replaced into scriptPubKey to sign
         "ffffffff"; // disable locktime
 
-      inputScriptArr.push(inputScript);
+      this._inputScriptArr.push(inputScript);
     }
 
-    return inputScriptArr;
+    return this._inputScriptArr;
   };
 
   private _finalizeOutputs = async (): Promise<string> => {
+    // if already finalized, just return
+    if (this._outputScript.length !== 0) return this._outputScript;
+    // output count in varInt
     const outputCount: string = await this._getVarInt(this.outputs.length);
-    let outputScript: string = "";
+    this._outputScript = outputCount;
+    // get output script hex
     for (const output of this.outputs) {
-      outputScript +=
+      // amount + scriptPubKey
+      this._outputScript +=
         (await this._bigToLitleEndian(
           await this._makeHexN(
             Math.round(output.amount * 10 ** 8).toString(16),
@@ -96,54 +140,55 @@ export class Transaction {
           )
         )) + (await this._getScriptPubKey(output.address));
     }
-    return outputCount + outputScript;
+
+    return this._outputScript;
   };
 
   private _sign = async (
     pubkey: string,
     privkey: string,
-    inputScriptArr: string[],
-    outputScript: string
-  ): Promise<string> => {
+    unsignedTx: string,
+    inputIdx: number
+  ): Promise<void> => {
     const sigHashType: string = "01000000";
-    const data: string =
-      this.version +
-      inputScriptArr.join("") +
-      outputScript +
-      this.locktime +
-      sigHashType;
-    for (let i = 0; i < this.inputs.length; i++) {
-      const index: number =
-        8 + inputScriptArr[0].length + (64 + 8 + 2 + 8) * i + (64 + 8);
-      const p2pkh: string =
-        "19" + // script length for p2pkh
-        Opcode.OP_DUP +
-        Opcode.OP_HASH160 +
-        "14" + // anything smaller than 4c is byte length to read
-        bytesToHex(ripemd160(sha256(hexToBytes(pubkey)))) +
-        Opcode.OP_EQUALVERIFY +
-        Opcode.OP_CHECKSIG;
+    const txToSign: string = unsignedTx + sigHashType;
+    // index to insert script sig
+    const index: number =
+      8 + // tx version
+      this._inputScriptArr[0].length + // tx input count(varInt)
+      (64 + 8 + 2 + 8) * inputIdx + // txid + tx index + seperator + sequence
+      (64 + 8); // (txid + tx index) of first input
 
-      const msg: Uint8Array = sha256(
-        sha256(hexToBytes(data.slice(0, index) + p2pkh + data.slice(index + 2)))
-      );
-      const signature: string =
-        secp256k1.sign(msg, privkey).toDERHex() + sigHashType.slice(0, 2);
+    // default script sig type is p2pkh
+    const p2pkh: string =
+      "19" + // script length for p2pkh
+      Opcode.OP_DUP +
+      Opcode.OP_HASH160 +
+      "14" + // anything smaller than 4c is byte length to read
+      bytesToHex(ripemd160(sha256(hexToBytes(pubkey)))) +
+      Opcode.OP_EQUALVERIFY +
+      Opcode.OP_CHECKSIG;
 
-      const scriptSig: string =
-        (signature.length / 2).toString(16) + signature + "21" + pubkey;
-      const inputScript: string = inputScriptArr[i + 1];
-      const finalInputScript: string =
-        inputScript.slice(0, inputScript.length - 10) +
-        (await this._getVarInt(scriptSig.length / 2)) +
-        scriptSig +
-        inputScript.slice(inputScript.length - 8);
-      inputScriptArr.splice(i + 1, 1, finalInputScript);
-    }
-
-    return (
-      this.version + inputScriptArr.join("") + outputScript + this.locktime
+    // sign to generate DER signature
+    const msg: Uint8Array = sha256(
+      sha256(
+        hexToBytes(txToSign.slice(0, index) + p2pkh + txToSign.slice(index + 2))
+      )
     );
+    const signature: string =
+      secp256k1.sign(msg, privkey).toDERHex() + sigHashType.slice(0, 2);
+
+    // get final signed input script(p2pkh)
+    const scriptSig: string =
+      (signature.length / 2).toString(16) + signature + "21" + pubkey;
+    const inputScript: string = this._inputScriptArr[inputIdx + 1];
+    const finalInputScript: string =
+      inputScript.slice(0, inputScript.length - 10) +
+      (await this._getVarInt(scriptSig.length / 2)) +
+      scriptSig +
+      inputScript.slice(inputScript.length - 8);
+    // replace unsigned input into signed
+    this._inputScriptArr.splice(inputIdx + 1, 1, finalInputScript);
   };
 
   private _makeHexN = async (hex: string, n: number): Promise<string> => {
@@ -182,7 +227,11 @@ export class Transaction {
   };
 
   private _getScriptPubKey = async (address: string): Promise<string> => {
-    if (address.slice(0, 1) !== "D" || address.slice(0, 1) !== "n") {
+    if (
+      address.slice(0, 1) === "9" ||
+      address.slice(0, 1) === "A" ||
+      address.slice(0, 1) === "2"
+    ) {
       return (
         "17" + // script length for p2sh
         Opcode.OP_HASH160 +
