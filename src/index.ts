@@ -73,7 +73,16 @@ export class Transaction {
     index: number
   ): Promise<void> => {
     const unsignedTx = await this._finalize();
-    await this._sign(pubkey, privkey, unsignedTx, index);
+    await this._sign([pubkey], [privkey], unsignedTx, index);
+  };
+
+  public multiSignInput = async (
+    pubkey: string[],
+    privkey: string[],
+    index: number
+  ): Promise<void> => {
+    const unsignedTx = await this._finalize();
+    await this._sign(pubkey, privkey, unsignedTx, index, true);
   };
 
   public getSignedHex = async (): Promise<string> => {
@@ -145,10 +154,11 @@ export class Transaction {
   };
 
   private _sign = async (
-    pubkey: string,
-    privkey: string,
+    pubkey: string[],
+    privkey: string[],
     unsignedTx: string,
-    inputIdx: number
+    inputIdx: number,
+    isMultiSig?: boolean
   ): Promise<void> => {
     const sigHashType: string = "01000000";
     const txToSign: string = unsignedTx + sigHashType;
@@ -158,29 +168,63 @@ export class Transaction {
       this._inputScriptArr[0].length + // tx input count(varInt)
       (64 + 8 + 2 + 8) * inputIdx + // txid + tx index + seperator + sequence
       (64 + 8); // (txid + tx index) of first input
+    // get script pub key to sign
+    let scriptPubKey: string = "";
+    if (!isMultiSig) {
+      // default script sig type is p2pkh
+      scriptPubKey =
+        "19" + // script length for p2pkh
+        Opcode.OP_DUP +
+        Opcode.OP_HASH160 +
+        "14" + // anything smaller than 4c is byte length to read
+        bytesToHex(ripemd160(sha256(hexToBytes(pubkey[0])))) +
+        Opcode.OP_EQUALVERIFY +
+        Opcode.OP_CHECKSIG;
+    } else {
+      // multi pubkey for p2sh script
+      let multiPubkey: string = "";
+      for (let i = 0; i < pubkey.length; i++) {
+        multiPubkey += "21" + pubkey[i];
+      }
+      let p2sh: string =
+        (80 + privkey.length).toString(16) + // m signatures
+        multiPubkey +
+        (80 + privkey.length).toString(16) + // n pubkeys
+        Opcode.OP_CHECKMULTISIG;
 
-    // default script sig type is p2pkh
-    const p2pkh: string =
-      "19" + // script length for p2pkh
-      Opcode.OP_DUP +
-      Opcode.OP_HASH160 +
-      "14" + // anything smaller than 4c is byte length to read
-      bytesToHex(ripemd160(sha256(hexToBytes(pubkey)))) +
-      Opcode.OP_EQUALVERIFY +
-      Opcode.OP_CHECKSIG;
+      scriptPubKey = (await this._getRedeemScriptLength(p2sh)) + p2sh;
+    }
 
     // sign to generate DER signature
     const msg: Uint8Array = sha256(
       sha256(
-        hexToBytes(txToSign.slice(0, index) + p2pkh + txToSign.slice(index + 2))
+        hexToBytes(
+          txToSign.slice(0, index) + scriptPubKey + txToSign.slice(index + 2)
+        )
       )
     );
-    const signature: string =
-      secp256k1.sign(msg, privkey).toDERHex() + sigHashType.slice(0, 2);
 
-    // get final signed input script(p2pkh)
-    const scriptSig: string =
-      (signature.length / 2).toString(16) + signature + "21" + pubkey;
+    // get script sig to insert
+    let scriptSig: string = "";
+    if (!isMultiSig) {
+      // p2pkh scrip sig
+      const signature: string =
+        secp256k1.sign(msg, privkey[0]).toDERHex() + sigHashType.slice(0, 2);
+      scriptSig +=
+        (signature.length / 2).toString(16) + signature + "21" + pubkey;
+    } else {
+      // p2sh script sig
+      // multi sig for p2sh script
+      let multiSig: string = "00"; //one extra unused value removed from the stack for OP_CHECKMULTISIG
+      for (let i = 0; i < privkey.length; i++) {
+        const signature =
+          secp256k1.sign(msg, privkey[i]).toDERHex() + sigHashType.slice(0, 2);
+        multiSig += (signature.length / 2).toString(16) + signature;
+      }
+      // scriptPubKey(redeem script) is in script sig
+      scriptSig = multiSig + scriptPubKey;
+    }
+
     const inputScript: string = this._inputScriptArr[inputIdx + 1];
     const finalInputScript: string =
       inputScript.slice(0, inputScript.length - 10) +
@@ -251,5 +295,18 @@ export class Transaction {
         Opcode.OP_CHECKSIG
       );
     }
+  };
+
+  private _getRedeemScriptLength = async (
+    redeemScript: string
+  ): Promise<string> => {
+    return redeemScript.length < 76
+      ? await this._getVarInt(redeemScript.length / 2)
+      : redeemScript.length < 255
+      ? Opcode.OP_PUSHDATA1 + (await this._getVarInt(redeemScript.length / 2))
+      : Opcode.OP_PUSHDATA2 +
+        (await this._bigToLitleEndian(
+          await this._makeHexN(redeemScript.length.toString(16), 4)
+        ));
   };
 }
