@@ -34,6 +34,25 @@ export const generateAddress = async (
   return bs58encoded;
 };
 
+export const generateScriptAddress = async (
+  script: string,
+  network = "mainnet"
+): Promise<string> => {
+  const scriptHash: Uint8Array = ripemd160(sha256(hexToBytes(script)));
+  const version: Uint8Array = new Uint8Array([
+    network === "mainnet" ? 0x16 : 0xc4,
+  ]);
+  const checksum: Uint8Array = sha256(
+    sha256(new Uint8Array([...version, ...scriptHash]))
+  ).slice(0, 4);
+
+  const bs58encoded: string = bs58.encode(
+    new Uint8Array([...version, ...scriptHash, ...checksum])
+  );
+
+  return bs58encoded;
+};
+
 export class Transaction {
   version: string;
   locktime: string;
