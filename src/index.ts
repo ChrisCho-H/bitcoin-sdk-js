@@ -123,7 +123,7 @@ export class Transaction {
         (await this._bigToLitleEndian(
           await this._makeHexN(input.index.toString(16), 8)
         )) +
-        "00" + // will be replaced into scriptPubKey to sign
+        Opcode.OP_0 + // will be replaced into scriptPubKey to sign
         "ffffffff"; // disable locktime
 
       this._inputScriptArr.push(inputScript);
@@ -144,7 +144,7 @@ export class Transaction {
       this._outputScript +=
         (await this._bigToLitleEndian(
           await this._makeHexN(
-            Math.round(output.amount * 10 ** 8).toString(16),
+            Math.floor(output.amount * 10 ** 8).toString(16),
             16
           )
         )) + (await this._getScriptPubKey(output.address));
@@ -168,11 +168,14 @@ export class Transaction {
       this._inputScriptArr[0].length + // tx input count(varInt)
       (64 + 8 + 2 + 8) * inputIdx + // txid + tx index + seperator + sequence
       (64 + 8); // (txid + tx index) of first input
+
     // get script pub key to sign
-    let scriptPubKey: string = "";
+    let scriptCode: string = "";
+    // op_pushdata and length in hex
+    let redeemScriptPrefix: string[] = [];
     if (!isMultiSig) {
       // default script sig type is p2pkh
-      scriptPubKey =
+      scriptCode =
         "19" + // script length for p2pkh
         Opcode.OP_DUP +
         Opcode.OP_HASH160 +
@@ -181,25 +184,23 @@ export class Transaction {
         Opcode.OP_EQUALVERIFY +
         Opcode.OP_CHECKSIG;
     } else {
-      // multi pubkey for p2sh script
-      let multiPubkey: string = "";
-      for (let i = 0; i < pubkey.length; i++) {
-        multiPubkey += "21" + pubkey[i];
-      }
+      // multi sig type of p2sh script
       let p2sh: string =
         (80 + privkey.length).toString(16) + // m signatures
-        multiPubkey +
-        (80 + privkey.length).toString(16) + // n pubkeys
+        "21" + // first pubkey bytes to read
+        pubkey.join("21") + // other pubkey and bytes to read
+        (80 + pubkey.length).toString(16) + // n pubkeys
         Opcode.OP_CHECKMULTISIG;
-
-      scriptPubKey = (await this._getRedeemScriptLength(p2sh)) + p2sh;
+      // add script length except op_pushdata(will add after sign)
+      redeemScriptPrefix = await this._getRedeemScriptPrefix(p2sh);
+      scriptCode = redeemScriptPrefix[1] + p2sh;
     }
 
     // sign to generate DER signature
     const msg: Uint8Array = sha256(
       sha256(
         hexToBytes(
-          txToSign.slice(0, index) + scriptPubKey + txToSign.slice(index + 2)
+          txToSign.slice(0, index) + scriptCode + txToSign.slice(index + 2)
         )
       )
     );
@@ -215,14 +216,14 @@ export class Transaction {
     } else {
       // p2sh script sig
       // multi sig for p2sh script
-      let multiSig: string = "00"; //one extra unused value removed from the stack for OP_CHECKMULTISIG
+      let multiSig: string = Opcode.OP_0; //one extra unused value removed from the stack for OP_CHECKMULTISIG
       for (let i = 0; i < privkey.length; i++) {
         const signature =
           secp256k1.sign(msg, privkey[i]).toDERHex() + sigHashType.slice(0, 2);
         multiSig += (signature.length / 2).toString(16) + signature;
       }
       // scriptPubKey(redeem script) is in script sig
-      scriptSig = multiSig + scriptPubKey;
+      scriptSig = multiSig + redeemScriptPrefix[0] + scriptCode;
     }
 
     const inputScript: string = this._inputScriptArr[inputIdx + 1];
@@ -248,21 +249,21 @@ export class Transaction {
       return await this._makeHexN(int.toString(16), 2);
     } else if (int <= 65535) {
       return (
-        "FD" +
+        "fd" +
         (await this._bigToLitleEndian(
           await this._makeHexN(int.toString(16), 4)
         ))
       );
     } else if (int <= 4294967295) {
       return (
-        "FE" +
+        "fe" +
         (await this._bigToLitleEndian(
           await this._makeHexN(int.toString(16), 8)
         ))
       );
     } else {
       return (
-        "FF" +
+        "ff" +
         (await this._bigToLitleEndian(
           await this._makeHexN(int.toString(16), 16)
         ))
@@ -297,16 +298,21 @@ export class Transaction {
     }
   };
 
-  private _getRedeemScriptLength = async (
+  private _getRedeemScriptPrefix = async (
     redeemScript: string
-  ): Promise<string> => {
-    return redeemScript.length < 76
-      ? await this._getVarInt(redeemScript.length / 2)
-      : redeemScript.length < 255
-      ? Opcode.OP_PUSHDATA1 + (await this._getVarInt(redeemScript.length / 2))
-      : Opcode.OP_PUSHDATA2 +
-        (await this._bigToLitleEndian(
-          await this._makeHexN(redeemScript.length.toString(16), 4)
-        ));
+  ): Promise<string[]> => {
+    return redeemScript.length / 2 < 76
+      ? ["", await this._getVarInt(redeemScript.length / 2)]
+      : redeemScript.length / 2 < 256
+      ? [
+          Opcode.OP_PUSHDATA1,
+          await this._makeHexN((redeemScript.length / 2).toString(16), 2),
+        ]
+      : [
+          Opcode.OP_PUSHDATA2,
+          await this._bigToLitleEndian(
+            await this._makeHexN((redeemScript.length / 2).toString(16), 4)
+          ),
+        ];
   };
 }
