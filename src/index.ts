@@ -3,7 +3,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { ripemd160 } from "@noble/hashes/ripemd160";
 import { hexToBytes, bytesToHex } from "@noble/hashes/utils";
 import bs58 from "bs58";
-import Opcode from "./Opcode";
+import Opcode from "./Opcode.js";
 
 export interface UTXO {
   id: string;
