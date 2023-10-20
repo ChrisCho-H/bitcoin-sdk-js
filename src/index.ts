@@ -34,6 +34,22 @@ export const generateAddress = async (
   return bs58encoded;
 };
 
+export const generateMultiSigScript = async (
+  privkeyNums: number,
+  pubkey: string[]
+): Promise<string> => {
+  if (privkeyNums > 15 || pubkey.length > 15)
+    throw new Error("Maximum number of keys is 15");
+  // multi sig type of p2sh script
+  const p2sh: string =
+    (80 + privkeyNums).toString(16) + // m signatures
+    "21" + // first pubkey bytes to read
+    pubkey.join("21") + // other pubkey and bytes to read
+    (80 + pubkey.length).toString(16) + // n pubkeys
+    Opcode.OP_CHECKMULTISIG;
+  return p2sh;
+};
+
 export const generateScriptAddress = async (
   script: string,
   network = "mainnet"
@@ -111,22 +127,6 @@ export class Transaction {
       this._outputScript +
       this.locktime
     );
-  };
-
-  public generateMultiSigScript = async (
-    privkeyNums: number,
-    pubkey: string[]
-  ): Promise<string> => {
-    if (privkeyNums > 15 || pubkey.length > 15)
-      throw new Error("Maximum number of keys is 15");
-    // multi sig type of p2sh script
-    const p2sh: string =
-      (80 + privkeyNums).toString(16) + // m signatures
-      "21" + // first pubkey bytes to read
-      pubkey.join("21") + // other pubkey and bytes to read
-      (80 + pubkey.length).toString(16) + // n pubkeys
-      Opcode.OP_CHECKMULTISIG;
-    return p2sh;
   };
 
   private _finalize = async (): Promise<string> => {
@@ -220,10 +220,7 @@ export class Transaction {
         Opcode.OP_CHECKSIG;
     } else {
       // multi sig type of p2sh script
-      const p2sh: string = await this.generateMultiSigScript(
-        privkey.length,
-        pubkey
-      );
+      const p2sh: string = await generateMultiSigScript(privkey.length, pubkey);
       // add script length except op_pushdata(will add after sign)
       redeemScriptPrefix = await this._getRedeemScriptPrefix(p2sh);
       scriptCode = redeemScriptPrefix[1] + p2sh;
