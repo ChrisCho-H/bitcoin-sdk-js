@@ -1,10 +1,20 @@
 {
-  "name": "dogecoin-js",
+  "name": "dogecoinjs-lib",
   "version": "0.0.1",
   "description": "dogecoin javascript library for web, mobile and server.",
+  "keywords": [
+    "dogecoin",
+    "dogecoinjs-lib",
+    "dogecoin-js",
+    "dogecoinjs",
+    "crypto",
+    "crytography",
+    "react",
+    "react-native"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ChrisCho-H/dogecoin-js.git"
+    "url": "https://github.com/ChrisCho-H/dogecoinjs-lib.git"
   },
   "main": "./lib/cjs/index.cjs",
   "scripts": {
@@ -44,12 +54,12 @@
         "default": "./lib/cjs/index.cjs"
       },
       "import": {
-        "types": "./lib/esm/index.d.ts",
-        "default": "./lib/esm/index.js"
+        "types": "./lib/esm/index.d.mts",
+        "default": "./lib/esm/index.mjs"
       }
     }
   },
-  "module": "./lib/esm/index.js",
-  "types": "./lib/esm/index.d.ts",
+  "module": "./lib/esm/index.mjs",
+  "types": "./lib/esm/index.d.mts",
   "sideEffects": false
 }
