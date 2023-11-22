@@ -168,7 +168,7 @@ export class Transaction {
       tx id + tx index + separator + sequence
       */
       const inputScript: string =
-        this._bigToLitleEndian(input.id) +
+        await this._bigToLitleEndian(input.id) +
         (await this._bigToLitleEndian(
           await this._makeHexN(input.index.toString(16), 8)
         )) +
