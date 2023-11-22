@@ -6,14 +6,19 @@ export interface Target {
     address: string;
     amount: number;
 }
+export interface KeyPair {
+    publicKey: string;
+    privateKey: string;
+}
 export declare const generateAddress: (pubkey: string, network?: string) => Promise<string>;
 export declare const generateMultiSigScript: (privkeyNums: number, pubkey: string[]) => Promise<string>;
 export declare const generateScriptAddress: (script: string, network?: string) => Promise<string>;
+export declare const generateKeyPair: () => Promise<KeyPair>;
 export declare class Transaction {
-    version: string;
-    locktime: string;
-    inputs: UTXO[];
-    outputs: Target[];
+    private _version;
+    private _locktime;
+    private _inputs;
+    private _outputs;
     private _inputScriptArr;
     private _outputScript;
     private _unsignedTx;

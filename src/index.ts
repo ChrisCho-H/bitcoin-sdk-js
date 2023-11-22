@@ -15,6 +15,11 @@ export interface Target {
   amount: number;
 }
 
+export interface KeyPair {
+  publicKey: string;
+  privateKey: string;
+}
+
 export const generateAddress = async (
   pubkey: string,
   network = "mainnet"
@@ -69,35 +74,44 @@ export const generateScriptAddress = async (
   return bs58encoded;
 };
 
+export const generateKeyPair = async (): Promise<KeyPair> => {
+  const privateKey: Uint8Array = secp256k1.utils.randomPrivateKey();
+  const publicKey: Uint8Array = secp256k1.getPublicKey(privateKey);
+  return {
+    publicKey: bytesToHex(publicKey),
+    privateKey: bytesToHex(privateKey),
+  };
+};
+
 export class Transaction {
-  version: string;
-  locktime: string;
-  inputs: UTXO[];
-  outputs: Target[];
+  private _version: string;
+  private _locktime: string;
+  private _inputs: UTXO[];
+  private _outputs: Target[];
   private _inputScriptArr: string[];
   private _outputScript: string;
   private _unsignedTx: string;
 
   constructor() {
-    this.inputs = [];
-    this.outputs = [];
-    this.version = "01000000";
-    this.locktime = "00000000";
+    this._inputs = [];
+    this._outputs = [];
+    this._version = "01000000";
+    this._locktime = "00000000";
     this._inputScriptArr = [];
     this._outputScript = "";
     this._unsignedTx = "";
   }
 
   public addInput = async (utxo: UTXO): Promise<void> => {
-    this.inputs.push(utxo);
+    this._inputs.push(utxo);
   };
 
   public addOutput = async (target: Target): Promise<void> => {
-    this.outputs.push(target);
+    this._outputs.push(target);
   };
 
   public signAll = async (pubkey: string, privkey: string): Promise<void> => {
-    for (let i = 0; i < this.inputs.length; i++) {
+    for (let i = 0; i < this._inputs.length; i++) {
       await this.signInput(pubkey, privkey, i);
     }
   };
@@ -122,10 +136,10 @@ export class Transaction {
 
   public getSignedHex = async (): Promise<string> => {
     return (
-      this.version +
+      this._version +
       this._inputScriptArr.join("") +
       this._outputScript +
-      this.locktime
+      this._locktime
     );
   };
 
@@ -137,7 +151,7 @@ export class Transaction {
     const outputScript: string = await this._finalizeOutputs();
 
     this._unsignedTx =
-      this.version + inputScript.join("") + outputScript + this.locktime;
+      this._version + inputScript.join("") + outputScript + this._locktime;
 
     return this._unsignedTx;
   };
@@ -146,10 +160,10 @@ export class Transaction {
     // if already finalized, just return
     if (this._inputScriptArr.length !== 0) return this._inputScriptArr;
     // input count in varInt
-    const inputCount: string = await this._getVarInt(this.inputs.length);
+    const inputCount: string = await this._getVarInt(this._inputs.length);
     this._inputScriptArr.push(inputCount);
     // get input script hex
-    for (const input of this.inputs) {
+    for (const input of this._inputs) {
       /* 
       tx id + tx index + separator + sequence
       */
@@ -171,10 +185,10 @@ export class Transaction {
     // if already finalized, just return
     if (this._outputScript.length !== 0) return this._outputScript;
     // output count in varInt
-    const outputCount: string = await this._getVarInt(this.outputs.length);
+    const outputCount: string = await this._getVarInt(this._outputs.length);
     this._outputScript = outputCount;
     // get output script hex
-    for (const output of this.outputs) {
+    for (const output of this._outputs) {
       // amount + scriptPubKey
       this._outputScript +=
         (await this._bigToLitleEndian(
