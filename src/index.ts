@@ -1,7 +1,7 @@
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { sha256 } from "@noble/hashes/sha256";
 import { ripemd160 } from "@noble/hashes/ripemd160";
-import { hexToBytes, bytesToHex } from "@noble/hashes/utils";
+import { hexToBytes, bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 import bs58 from "bs58";
 import Opcode from "./Opcode.js";
 
@@ -11,7 +11,8 @@ export interface UTXO {
 }
 
 export interface Target {
-  address: string;
+  address?: string;
+  script?: string;
   amount: number;
 }
 
@@ -83,6 +84,14 @@ export const generateKeyPair = async (): Promise<KeyPair> => {
   };
 };
 
+export const generateDataScript = async (
+  dataToWrite: string,
+  encode?: 'utf-8' | 'hex',
+): Promise<string> => {
+  const data: string = encode === 'hex' ? dataToWrite : bytesToHex(utf8ToBytes(dataToWrite));
+  return Opcode.OP_RETURN + await _getVarInt(data.length / 2) + data;
+};
+
 export class Transaction {
   private _version: string;
   private _locktime: string;
@@ -107,6 +116,8 @@ export class Transaction {
   };
 
   public addOutput = async (target: Target): Promise<void> => {
+    if (!target.address && !target.script)
+      throw new Error('Either address or script must be given for output'); 
     this._outputs.push(target);
   };
 
@@ -160,7 +171,7 @@ export class Transaction {
     // if already finalized, just return
     if (this._inputScriptArr.length !== 0) return this._inputScriptArr;
     // input count in varInt
-    const inputCount: string = await this._getVarInt(this._inputs.length);
+    const inputCount: string = await _getVarInt(this._inputs.length);
     this._inputScriptArr.push(inputCount);
     // get input script hex
     for (const input of this._inputs) {
@@ -168,9 +179,9 @@ export class Transaction {
       tx id + tx index + separator + sequence
       */
       const inputScript: string =
-        await this._bigToLitleEndian(input.id) +
-        (await this._bigToLitleEndian(
-          await this._makeHexN(input.index.toString(16), 8)
+        await _bigToLitleEndian(input.id) +
+        (await _bigToLitleEndian(
+          await _makeHexN(input.index.toString(16), 8)
         )) +
         Opcode.OP_0 + // will be replaced into scriptPubKey to sign
         "ffffffff"; // disable locktime
@@ -185,18 +196,19 @@ export class Transaction {
     // if already finalized, just return
     if (this._outputScript.length !== 0) return this._outputScript;
     // output count in varInt
-    const outputCount: string = await this._getVarInt(this._outputs.length);
+    const outputCount: string = await _getVarInt(this._outputs.length);
     this._outputScript = outputCount;
     // get output script hex
     for (const output of this._outputs) {
       // amount + scriptPubKey
       this._outputScript +=
-        (await this._bigToLitleEndian(
-          await this._makeHexN(
+        (await _bigToLitleEndian(
+          await _makeHexN(
             Math.floor(output.amount * 10 ** 8).toString(16),
             16
           )
-        )) + (await this._getScriptPubKey(output.address));
+        )) + (output.address ? (await this._getScriptPubKey(output.address as string))
+        : (await _getVarInt((output.script as string).length / 2) + output.script))
     }
 
     return this._outputScript;
@@ -273,46 +285,11 @@ export class Transaction {
     const inputScript: string = this._inputScriptArr[inputIdx + 1];
     const finalInputScript: string =
       inputScript.slice(0, inputScript.length - 10) +
-      (await this._getVarInt(scriptSig.length / 2)) +
+      (await _getVarInt(scriptSig.length / 2)) +
       scriptSig +
       inputScript.slice(inputScript.length - 8);
     // replace unsigned input into signed
     this._inputScriptArr.splice(inputIdx + 1, 1, finalInputScript);
-  };
-
-  private _makeHexN = async (hex: string, n: number): Promise<string> => {
-    return "0".repeat(n - hex.length) + hex;
-  };
-
-  private _bigToLitleEndian = async (hex: string): Promise<string> => {
-    return bytesToHex(hexToBytes(hex).reverse());
-  };
-
-  private _getVarInt = async (int: number): Promise<string> => {
-    if (int <= 252) {
-      return await this._makeHexN(int.toString(16), 2);
-    } else if (int <= 65535) {
-      return (
-        "fd" +
-        (await this._bigToLitleEndian(
-          await this._makeHexN(int.toString(16), 4)
-        ))
-      );
-    } else if (int <= 4294967295) {
-      return (
-        "fe" +
-        (await this._bigToLitleEndian(
-          await this._makeHexN(int.toString(16), 8)
-        ))
-      );
-    } else {
-      return (
-        "ff" +
-        (await this._bigToLitleEndian(
-          await this._makeHexN(int.toString(16), 16)
-        ))
-      );
-    }
   };
 
   private _getScriptPubKey = async (address: string): Promise<string> => {
@@ -346,17 +323,52 @@ export class Transaction {
     redeemScript: string
   ): Promise<string[]> => {
     return redeemScript.length / 2 < 76
-      ? ["", await this._getVarInt(redeemScript.length / 2)]
+      ? ["", await _getVarInt(redeemScript.length / 2)]
       : redeemScript.length / 2 < 256
       ? [
           Opcode.OP_PUSHDATA1,
-          await this._makeHexN((redeemScript.length / 2).toString(16), 2),
+          await _makeHexN((redeemScript.length / 2).toString(16), 2),
         ]
       : [
           Opcode.OP_PUSHDATA2,
-          await this._bigToLitleEndian(
-            await this._makeHexN((redeemScript.length / 2).toString(16), 4)
+          await _bigToLitleEndian(
+            await _makeHexN((redeemScript.length / 2).toString(16), 4)
           ),
         ];
   };
 }
+
+const _makeHexN = async (hex: string, n: number): Promise<string> => {
+  return "0".repeat(n - hex.length) + hex;
+};
+
+const _bigToLitleEndian = async (hex: string): Promise<string> => {
+  return bytesToHex(hexToBytes(hex).reverse());
+};
+
+const _getVarInt = async (int: number): Promise<string> => {
+  if (int <= 252) {
+    return await _makeHexN(int.toString(16), 2);
+  } else if (int <= 65535) {
+    return (
+      "fd" +
+      (await _bigToLitleEndian(
+        await _makeHexN(int.toString(16), 4)
+      ))
+    );
+  } else if (int <= 4294967295) {
+    return (
+      "fe" +
+      (await _bigToLitleEndian(
+        await _makeHexN(int.toString(16), 8)
+      ))
+    );
+  } else {
+    return (
+      "ff" +
+      (await _bigToLitleEndian(
+        await _makeHexN(int.toString(16), 16)
+      ))
+    );
+  }
+};

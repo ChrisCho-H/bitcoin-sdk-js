@@ -3,7 +3,8 @@ export interface UTXO {
     index: number;
 }
 export interface Target {
-    address: string;
+    address?: string;
+    script?: string;
     amount: number;
 }
 export interface KeyPair {
@@ -14,6 +15,7 @@ export declare const generateAddress: (pubkey: string, network?: string) => Prom
 export declare const generateMultiSigScript: (privkeyNums: number, pubkey: string[]) => Promise<string>;
 export declare const generateScriptAddress: (script: string, network?: string) => Promise<string>;
 export declare const generateKeyPair: () => Promise<KeyPair>;
+export declare const generateDataScript: (dataToWrite: string, encode?: 'utf-8' | 'hex') => Promise<string>;
 export declare class Transaction {
     private _version;
     private _locktime;
@@ -33,9 +35,6 @@ export declare class Transaction {
     private _finalizeInputs;
     private _finalizeOutputs;
     private _sign;
-    private _makeHexN;
-    private _bigToLitleEndian;
-    private _getVarInt;
     private _getScriptPubKey;
     private _getRedeemScriptPrefix;
 }
