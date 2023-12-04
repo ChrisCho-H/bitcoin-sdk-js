@@ -89,7 +89,8 @@ export const generateDataScript = async (
   encode?: 'utf-8' | 'hex',
 ): Promise<string> => {
   const data: string = encode === 'hex' ? dataToWrite : bytesToHex(utf8ToBytes(dataToWrite));
-  return Opcode.OP_RETURN + await _getVarInt(data.length / 2) + data;
+  if (data.length > 160) throw new Error('Maximum data size is 80 bytes');
+  return Opcode.OP_RETURN + await _readBytesN(data) + data;
 };
 
 export class Transaction {
@@ -371,4 +372,13 @@ const _getVarInt = async (int: number): Promise<string> => {
       ))
     );
   }
+};
+
+const _readBytesN = async (dataToRead: string): Promise<string> => {
+  return dataToRead.length / 2 < 76 ? 
+    await _makeHexN((dataToRead.length / 2).toString(16), 2)
+    : dataToRead.length / 2 < 256 ? 
+      Opcode.OP_PUSHDATA1 + await _makeHexN((dataToRead.length / 2).toString(16), 2)
+      : Opcode.OP_PUSHDATA2 + await _bigToLitleEndian(
+        await _makeHexN((dataToRead.length / 2).toString(16), 4));
 };
