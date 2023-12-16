@@ -2,6 +2,7 @@
   "name": "dogecoinjs-lib",
   "version": "0.0.1",
   "description": "dogecoin javascript library for web, mobile and server.",
+  "type": "module",
   "keywords": [
     "dogecoin",
     "dogecoinjs-lib",

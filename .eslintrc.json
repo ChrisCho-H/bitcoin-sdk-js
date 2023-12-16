@@ -1,0 +1,57 @@
+{
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+        "@typescript-eslint"
+    ],
+    "extends": [
+        "eslint:recommended", 
+        "prettier",
+        "plugin:@typescript-eslint/recommended",
+        "plugin:prettier/recommended"
+    ],
+    "rules": {
+        "arrow-body-style": "off",
+        "prefer-arrow-callback": "off",
+
+        "@typescript-eslint/array-type": 0,
+        "@typescript-eslint/no-inferrable-types": "off",
+        "@typescript-eslint/ban-types": "off",
+        
+        "arrow-parens": "off",
+        "curly": "off",
+        "no-case-declarations": "off",
+
+        "quotes": "off",
+        "@typescript-eslint/quotes": ["error", "single", { "avoidEscape": true, "allowTemplateLiterals": true }],
+        "prefer-rest-params": "off",
+        "no-bitwise": "off",
+        "no-empty": ["error", { "allowEmptyCatch": true }],
+        
+        "@typescript-eslint/no-var-requires": "off",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        
+        "no-unused-expressions": "off",
+        "@typescript-eslint/no-unused-expressions": "off",
+        
+        "space-before-function-paren": "off",
+
+        "@typescript-eslint/interface-name-prefix": "off",
+        "@typescript-eslint/explicit-function-return-type": "error",
+        "@typescript-eslint/explicit-module-boundary-types": "error",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unused-vars": "error",
+        "no-console": "error",
+        "eqeqeq": "error",
+        "camelcase": "warn",
+        "no-loss-of-precision": "error",
+        "no-undef-init": "error",
+        "no-var": "error"
+    },
+    "env": {
+        "es6": true,
+        "browser": true,
+        "amd": true,
+        "node": true
+    }
+}
