@@ -211,6 +211,7 @@ export class Transaction {
   private _inputScriptArr: string[];
   private _outputScriptArr: string[];
   private _unsignedTx: string;
+  private _sequence: string;
 
   constructor() {
     this._inputs = [];
@@ -220,25 +221,21 @@ export class Transaction {
     this._inputScriptArr = [];
     this._outputScriptArr = [];
     this._unsignedTx = '';
+    this._sequence = 'fdffffff'; // enable locktime and rbf as default
   }
 
   public addInput = async (utxo: UTXO): Promise<void> => {
+    await this._isSignedCheck('add input');
     this._inputs.push(utxo);
   };
 
   public addOutput = async (target: Target): Promise<void> => {
+    await this._isSignedCheck('add output');
     if (!target.address && !target.script)
       throw new Error('Either address or script must be given for output');
     if (target.script && target.script.length > 20000)
       throw new Error('Output script must be less than 10k bytes');
     this._outputs.push(target);
-  };
-
-  // must be set >= any of timelock input block height
-  public setLocktime = async (block: number): Promise<void> => {
-    this._locktime = await _bigToLitleEndian(
-      await _makeHexN(block.toString(16), 8),
-    );
   };
 
   public signAll = async (pubkey: string, privkey: string): Promise<void> => {
@@ -325,6 +322,31 @@ export class Transaction {
     );
   };
 
+  public getId = async (): Promise<string> => {
+    // little endian of double sha256 serialized tx
+    return bytesToHex(
+      sha256(sha256(hexToBytes(await this.getSignedHex()))).reverse(),
+    );
+  };
+
+  // must be set >= any of timelock input block height
+  public setLocktime = async (block: number): Promise<void> => {
+    await this._isSignedCheck('set locktime');
+    this._locktime = await _bigToLitleEndian(
+      await _makeHexN(block.toString(16), 8),
+    );
+  };
+
+  public disableRBF = async (): Promise<void> => {
+    await this._isSignedCheck('disable rbf');
+    this._sequence = 'feffffff';
+  };
+
+  public disableLocktime = async (): Promise<void> => {
+    await this._isSignedCheck('disable locktime');
+    this._sequence = 'ffffffff';
+  };
+
   private _finalize = async (): Promise<string> => {
     // if already finalized, just return
     if (this._unsignedTx.length !== 0) return this._unsignedTx;
@@ -358,7 +380,7 @@ export class Transaction {
           await _makeHexN(input.index.toString(16), 8),
         )) +
         Opcode.OP_0 + // will be replaced into scriptPubKey to sign
-        'fdffffff'; // enable locktime and rbf as default
+        this._sequence;
 
       this._inputScriptArr.push(inputScript);
     }
@@ -514,6 +536,12 @@ export class Transaction {
       inputScript.slice(inputScript.length - 8);
     // replace unsigned input into signed
     this._inputScriptArr.splice(index + 1, 1, finalInputScript);
+  };
+
+  private _isSignedCheck = async (taskMsg: string): Promise<void> => {
+    // if already finalized, at least one input is signed
+    if (this._outputScriptArr.length !== 0)
+      throw new Error(`Cannot ${taskMsg} after any of input is signed`);
   };
 }
 

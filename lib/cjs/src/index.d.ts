@@ -28,19 +28,24 @@ export declare class Transaction {
     private _inputScriptArr;
     private _outputScriptArr;
     private _unsignedTx;
+    private _sequence;
     constructor();
     addInput: (utxo: UTXO) => Promise<void>;
     addOutput: (target: Target) => Promise<void>;
-    setLocktime: (block: number) => Promise<void>;
     signAll: (pubkey: string, privkey: string) => Promise<void>;
     signInput: (pubkey: string, privkey: string, index: number, timeLockScript?: string, secretHex?: string) => Promise<void>;
     multiSignInput: (pubkey: string[], privkey: string[], index: number, timeLockScript?: string, secretHex?: string) => Promise<void>;
     unlockHashInput: (secretHex: string, index: number, timeLockScript?: string) => Promise<void>;
     getSignedHex: () => Promise<string>;
+    getId: () => Promise<string>;
+    setLocktime: (block: number) => Promise<void>;
+    disableRBF: () => Promise<void>;
+    disableLocktime: () => Promise<void>;
     private _finalize;
     private _finalizeInputs;
     private _finalizeOutputs;
     private _sign;
     private _getScriptCodeIdx;
     private _setInputScriptSig;
+    private _isSignedCheck;
 }
