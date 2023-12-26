@@ -1,5 +1,5 @@
 /** Script opcodes */
-declare enum Opcode {
+export declare enum Opcode {
     /**
      * Opcodes that take a true/false value will evaluate the following as false:
      *     an empty vector
@@ -448,4 +448,3 @@ declare enum Opcode {
     OP_CHECKSIGADD = "ba",
     OP_INVALIDOPCODE = "ff"
 }
-export default Opcode;
