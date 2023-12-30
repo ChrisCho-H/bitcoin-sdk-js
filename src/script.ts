@@ -1,32 +1,40 @@
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import bs58 from 'bs58';
+import { bech32 } from 'bech32';
 import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './pushdata.js';
 import { reverseHex } from './encode.js';
 
 export const getScriptByAddress = async (address: string): Promise<string> => {
-  if (
-    address.slice(0, 1) === '9' ||
-    address.slice(0, 1) === 'A' ||
-    address.slice(0, 1) === '2'
-  ) {
-    return (
-      Opcode.OP_HASH160 +
-      '14' + // anything smaller than 4c is byte length to read
-      bytesToHex(bs58.decode(address).slice(1, 21)) +
-      Opcode.OP_EQUAL
+  if (address.slice(0, 4) === 'bc1q' || address.slice(0, 4) === 'tb1q') {
+    // segwit uses bech32
+    const hash: string = bytesToHex(
+      new Uint8Array(bech32.fromWords(bech32.decode(address).words.slice(1))),
     );
+    return Opcode.OP_0 + (await pushData(hash)) + hash;
   } else {
-    // p2pkh default
-    return (
-      Opcode.OP_DUP +
-      Opcode.OP_HASH160 +
-      '14' + // anything smaller than 4c is byte length to read
-      bytesToHex(bs58.decode(address).slice(1, 21)) +
-      Opcode.OP_EQUALVERIFY +
-      Opcode.OP_CHECKSIG
-    );
+    // legacy uses base58
+    const hash: string = bytesToHex(bs58.decode(address).slice(1, 21));
+    if (address.slice(0, 1) === '3' || address.slice(0, 1) === '2') {
+      // p2sh or p2wsh
+      return (
+        Opcode.OP_HASH160 +
+        '14' + // anything smaller than 4c is byte length to read
+        hash +
+        Opcode.OP_EQUAL
+      );
+    } else {
+      // p2pkh default
+      return (
+        Opcode.OP_DUP +
+        Opcode.OP_HASH160 +
+        '14' + // anything smaller than 4c is byte length to read
+        hash +
+        Opcode.OP_EQUALVERIFY +
+        Opcode.OP_CHECKSIG
+      );
+    }
   }
 };
 
@@ -132,7 +140,7 @@ export const generateHashLockScript = async (
 
 export const generateDataScript = async (
   dataToWrite: string,
-  encode?: 'utf-8' | 'hex',
+  encode: 'utf-8' | 'hex' = 'utf-8',
 ): Promise<string> => {
   const data: string =
     encode === 'hex' ? dataToWrite : bytesToHex(utf8ToBytes(dataToWrite));
