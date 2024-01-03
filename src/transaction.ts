@@ -70,13 +70,15 @@ export class Transaction {
     pubkey: string,
     privkey: string,
     type: 'legacy' | 'segwit' = 'segwit',
+    timeLockScript = '',
+    secretHex = '',
   ): Promise<void> => {
     if (pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
     if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
 
     for (let i = 0; i < this._inputs.length; i++) {
-      await this.signInput(pubkey, privkey, i, '', '', type);
+      await this.signInput(pubkey, privkey, i, type, timeLockScript, secretHex);
     }
   };
 
@@ -84,9 +86,9 @@ export class Transaction {
     pubkey: string,
     privkey: string,
     index: number,
+    type: 'legacy' | 'segwit' = 'segwit',
     timeLockScript = '',
     secretHex = '',
-    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     if (pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
@@ -109,9 +111,9 @@ export class Transaction {
     pubkey: string[],
     privkey: string[],
     index: number,
+    type: 'legacy' | 'segwit' = 'segwit',
     timeLockScript = '',
     secretHex = '',
-    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     const unsignedTx = await this._finalize();
     await this._sign(
@@ -129,8 +131,8 @@ export class Transaction {
   public unlockHashInput = async (
     secretHex: string,
     index: number,
-    timeLockScript = '',
     type: 'legacy' | 'segwit' = 'segwit',
+    timeLockScript = '',
   ): Promise<void> => {
     if (index > this._inputs.length - 1)
       throw new Error(

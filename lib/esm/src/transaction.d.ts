@@ -25,10 +25,10 @@ export declare class Transaction {
     constructor();
     addInput: (utxo: UTXO) => Promise<void>;
     addOutput: (target: Target) => Promise<void>;
-    signAll: (pubkey: string, privkey: string, type?: 'legacy' | 'segwit') => Promise<void>;
-    signInput: (pubkey: string, privkey: string, index: number, timeLockScript?: string, secretHex?: string, type?: 'legacy' | 'segwit') => Promise<void>;
-    multiSignInput: (pubkey: string[], privkey: string[], index: number, timeLockScript?: string, secretHex?: string, type?: 'legacy' | 'segwit') => Promise<void>;
-    unlockHashInput: (secretHex: string, index: number, timeLockScript?: string, type?: 'legacy' | 'segwit') => Promise<void>;
+    signAll: (pubkey: string, privkey: string, type?: 'legacy' | 'segwit', timeLockScript?: string, secretHex?: string) => Promise<void>;
+    signInput: (pubkey: string, privkey: string, index: number, type?: 'legacy' | 'segwit', timeLockScript?: string, secretHex?: string) => Promise<void>;
+    multiSignInput: (pubkey: string[], privkey: string[], index: number, type?: 'legacy' | 'segwit', timeLockScript?: string, secretHex?: string) => Promise<void>;
+    unlockHashInput: (secretHex: string, index: number, type?: 'legacy' | 'segwit', timeLockScript?: string) => Promise<void>;
     getSignedHex: () => Promise<string>;
     getId: () => Promise<string>;
     setLocktime: (block: number) => Promise<void>;
