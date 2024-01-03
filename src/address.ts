@@ -5,14 +5,14 @@ import { bech32 } from 'bech32';
 
 export const generateAddress = async (
   pubkey: string,
-  isSegwit = true,
+  type: 'legacy' | 'segwit' = 'segwit',
   network: 'mainnet' | 'testnet' = 'mainnet',
 ): Promise<string> => {
   if (pubkey.length !== 66)
     throw new Error('pubkey must be compressed 33 bytes');
 
   const pubkeyHash: Uint8Array = await hash160(hexToBytes(pubkey));
-  if (isSegwit) {
+  if (type === 'segwit') {
     const words: number[] = bech32.toWords(pubkeyHash);
     words.unshift(0); // segwit version
     return bech32.encode(network === 'mainnet' ? 'bc' : 'tb', words);
@@ -32,16 +32,17 @@ export const generateAddress = async (
 
 export const generateScriptAddress = async (
   script: string,
-  isSegwit = true,
+  type: 'legacy' | 'segwit' = 'segwit',
   network: 'mainnet' | 'testnet' = 'mainnet',
 ): Promise<string> => {
   if (script.length > 1040)
     throw new Error('Redeem script must be less than 520 bytes');
 
-  const scriptHash: Uint8Array = isSegwit
-    ? await sha256(hexToBytes(script))
-    : await hash160(hexToBytes(script));
-  if (isSegwit) {
+  const scriptHash: Uint8Array =
+    type === 'segwit'
+      ? await sha256(hexToBytes(script))
+      : await hash160(hexToBytes(script));
+  if (type === 'segwit') {
     const words: number[] = bech32.toWords(scriptHash);
     words.unshift(0); // segwit version
     return bech32.encode(network === 'mainnet' ? 'bc' : 'tb', words);

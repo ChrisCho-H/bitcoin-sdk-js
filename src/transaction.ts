@@ -35,8 +35,8 @@ export class Transaction {
   private _segWitMarker = '00';
   private _segWitFlag = '01';
   private _witness: Map<number, string>;
-  private _witnessPrefix: Uint8Array;
-  private _witnessSuffix: Uint8Array;
+  private _witnessMsgPrefix: Uint8Array;
+  private _witnessMsgSuffix: Uint8Array;
 
   constructor() {
     this._inputs = [];
@@ -48,8 +48,8 @@ export class Transaction {
     this._unsignedTx = '';
     this._sequence = 'fdffffff'; // enable locktime and rbf as default
     this._witness = new Map<number, string>();
-    this._witnessPrefix = new Uint8Array(); // before outpoint
-    this._witnessSuffix = new Uint8Array(); // after sequence
+    this._witnessMsgPrefix = new Uint8Array(); // before outpoint
+    this._witnessMsgSuffix = new Uint8Array(); // after sequence
   }
 
   public addInput = async (utxo: UTXO): Promise<void> => {
@@ -69,14 +69,14 @@ export class Transaction {
   public signAll = async (
     pubkey: string,
     privkey: string,
-    isSegWit = true,
+    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     if (pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
     if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
 
     for (let i = 0; i < this._inputs.length; i++) {
-      await this.signInput(pubkey, privkey, i, '', '', isSegWit);
+      await this.signInput(pubkey, privkey, i, '', '', type);
     }
   };
 
@@ -86,7 +86,7 @@ export class Transaction {
     index: number,
     timeLockScript = '',
     secretHex = '',
-    isSegWit = true,
+    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     if (pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
@@ -101,7 +101,7 @@ export class Transaction {
       false,
       timeLockScript,
       secretHex,
-      isSegWit,
+      type === 'segwit' ? true : false,
     );
   };
 
@@ -111,7 +111,7 @@ export class Transaction {
     index: number,
     timeLockScript = '',
     secretHex = '',
-    isSegWit = true,
+    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     const unsignedTx = await this._finalize();
     await this._sign(
@@ -122,7 +122,7 @@ export class Transaction {
       true,
       timeLockScript,
       secretHex,
-      isSegWit,
+      type === 'segwit' ? true : false,
     );
   };
 
@@ -130,7 +130,7 @@ export class Transaction {
     secretHex: string,
     index: number,
     timeLockScript = '',
-    isSegWit = true,
+    type: 'legacy' | 'segwit' = 'segwit',
   ): Promise<void> => {
     if (index > this._inputs.length - 1)
       throw new Error(
@@ -142,6 +142,7 @@ export class Transaction {
     // script sig including secret and hash lock script
     const redeemScript =
       timeLockScript + (await generateHashLockScript(secretHex));
+    const isSegWit = type === 'segwit' ? true : false;
     const scriptSig: string =
       (isSegWit
         ? await getVarInt(secretHex.length / 2)
@@ -291,7 +292,7 @@ export class Transaction {
     const sequenceHash: Uint8Array = await hash256(
       hexToBytes(this._sequence.repeat(this._inputs.length)),
     );
-    this._witnessPrefix = new Uint8Array([
+    this._witnessMsgPrefix = new Uint8Array([
       ...versionByte,
       ...prevHash,
       ...sequenceHash,
@@ -300,7 +301,7 @@ export class Transaction {
       hexToBytes(this._outputScriptArr.join('').slice(2)),
     );
     const lockTimeByte: Uint8Array = hexToBytes(this._locktime);
-    this._witnessSuffix = new Uint8Array([...outputHash, ...lockTimeByte]);
+    this._witnessMsgSuffix = new Uint8Array([...outputHash, ...lockTimeByte]);
   };
 
   private _sign = async (
@@ -443,12 +444,12 @@ export class Transaction {
       const sigHashByte: Uint8Array = hexToBytes(sigHashType);
       return await hash256(
         new Uint8Array([
-          ...this._witnessPrefix,
+          ...this._witnessMsgPrefix,
           ...outpointByte,
           ...scriptCodeByte,
           ...valueByte,
           ...sequenceByte,
-          ...this._witnessSuffix,
+          ...this._witnessMsgSuffix,
           ...sigHashByte,
         ]),
       );
@@ -494,8 +495,8 @@ export class Transaction {
     witnessScriptSig: string,
     itemCount: string,
   ): Promise<void> => {
-    if (witnessScriptSig.length > 7200)
-      throw new Error('witness script must be less than 3600 bytes');
+    if (witnessScriptSig.length > 20000)
+      throw new Error('witness script must be less than 10,000 bytes');
     this._witness.set(index, itemCount + witnessScriptSig);
   };
 

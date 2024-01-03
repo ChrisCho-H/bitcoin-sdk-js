@@ -1,5 +1,5 @@
 export declare const getScriptByAddress: (address: string) => Promise<string>;
-export declare const generateScriptHash: (script: string, isSegWit?: boolean) => Promise<string>;
+export declare const generateScriptHash: (script: string, type?: 'legacy' | 'segwit') => Promise<string>;
 export declare const generateSingleSigScript: (pubkey: string) => Promise<string>;
 export declare const generateMultiSigScript: (privkeyCount: number, pubkeys: string[]) => Promise<string>;
 export declare const generateTimeLockScript: (block?: number, utc?: number, isAbsolute?: boolean) => Promise<string>;

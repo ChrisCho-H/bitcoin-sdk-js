@@ -40,14 +40,17 @@ export const getScriptByAddress = async (address: string): Promise<string> => {
 
 export const generateScriptHash = async (
   script: string,
-  isSegWit = true,
+  type: 'legacy' | 'segwit' = 'segwit',
 ): Promise<string> => {
-  if (script.length > 1040 && !isSegWit)
+  if (script.length > 1040 && type === 'legacy')
     throw new Error('Redeem script must be less than 520 bytes');
+  if (script.length > 20000 && type === 'segwit')
+    throw new Error('Witness script must be less than 10,000 bytes');
   const scriptByte: Uint8Array = hexToBytes(script);
-  const scriptHash: Uint8Array = isSegWit
-    ? await sha256(scriptByte) // sha256 for witness script
-    : await hash160(scriptByte);
+  const scriptHash: Uint8Array =
+    type === 'segwit'
+      ? await sha256(scriptByte) // sha256 for witness script
+      : await hash160(scriptByte);
   return bytesToHex(scriptHash);
 };
 
