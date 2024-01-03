@@ -1,21 +1,18 @@
 {
-  "name": "dogecoinjs-lib",
+  "name": "bitcoin-sdk-js",
   "version": "0.0.1",
-  "description": "dogecoin javascript library for web, mobile and server.",
+  "description": "bitcoin javascript library for web, mobile and server.",
   "type": "module",
   "keywords": [
-    "dogecoin",
-    "dogecoinjs-lib",
-    "dogecoin-js",
-    "dogecoinjs",
-    "crypto",
-    "crytography",
-    "react",
-    "react-native"
+    "bitcoin",
+    "bitcoin-sdk",
+    "bitcoin-js",
+    "bitcoinjs",
+    "bitcoinjs-lib"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ChrisCho-H/dogecoinjs-lib.git"
+    "url": "https://github.com/ChrisCho-H/bitcoin-sdk-js.git"
   },
   "main": "./lib/cjs/index.cjs",
   "scripts": {
