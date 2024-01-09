@@ -1,8 +1,7 @@
 export { Transaction } from './transaction.js';
-export { getScriptByAddress, generateScriptHash, generateSingleSigScript, generateMultiSigScript, generateTimeLockScript, generateHashLockScript, generateDataScript, } from './script.js';
-export { generateAddress, generateScriptAddress } from './address.js';
-export { generateKeyPair, KeyPair } from './wallet.js';
-export { pushData, getVarInt } from './pushdata.js';
+export * as script from './script.js';
+export * as address from './address.js';
+export * as wallet from './wallet.js';
 export { Opcode } from './opcode.js';
-export { sha256, ripemd160, hash160, hash256 } from './crypto.js';
-export { padZeroHexN, reverseHex, bytesToHex, hexToBytes } from './encode.js';
+export * as crypto from './crypto.js';
+export * as encode from './encode.js';
