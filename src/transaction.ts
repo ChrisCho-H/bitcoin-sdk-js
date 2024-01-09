@@ -146,6 +146,8 @@ export class Transaction {
       timeLockScript + (await generateHashLockScript(secretHex));
     const isSegWit = type === 'segwit' ? true : false;
     const scriptSig: string =
+      '01' +
+      Opcode.OP_1 + // as op_equalverify is used, trick to avoid clean stack err
       (isSegWit
         ? await getVarInt(secretHex.length / 2)
         : await pushData(secretHex)) +
@@ -159,7 +161,7 @@ export class Transaction {
           index,
           scriptSig,
           await this._getWitnessItemCount(
-            [],
+            ['count_for_OP_1'],
             [],
             false,
             timeLockScript,
@@ -321,8 +323,7 @@ export class Transaction {
     // hash lock redeem script if unlock hash exists
     let hashLockScript: string = '';
     if (secretHex.length !== 0) {
-      hashLockScript =
-        (await generateHashLockScript(secretHex)) + Opcode.OP_DROP;
+      hashLockScript = await generateHashLockScript(secretHex);
       // if secretHex not even, pad 0 at last
       secretHex.length % 2 !== 0 ? (secretHex += '0') : '';
       // add bytes to read secretHex

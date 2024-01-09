@@ -137,7 +137,7 @@ export const generateHashLockScript = async (
     Opcode.OP_HASH256 +
     '20' +
     bytesToHex(await hash256(hexToBytes(secretHex))) +
-    Opcode.OP_EQUAL
+    Opcode.OP_EQUALVERIFY // not OP_EQUAL to use with other script
   );
 };
 
