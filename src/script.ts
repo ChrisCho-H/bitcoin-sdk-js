@@ -93,30 +93,13 @@ export const generateMultiSigScript = async (
 };
 
 export const generateTimeLockScript = async (
-  block?: number,
-  utc?: number,
-  isAbsolute = true,
+  block: number,
 ): Promise<string> => {
-  if (!block && !utc)
-    throw new Error('Either block or utc must be given for output');
-  if (isAbsolute) {
-    if (block && block >= 500000000)
-      throw new Error('Block height must be < 500,000,000');
-    if (utc && utc < 500000000) throw new Error('UTC must be >= 500,000,000');
-  } else {
-    if (block && block > 65535)
-      throw new Error('Block height must be < 65,535');
-    if (utc && utc > 33554430) throw new Error('UTC must be < 33,554,431');
-    if (utc && utc % 512 !== 0) throw new Error('UTC must be mutiple of 512');
-  }
+  if (block >= 500000000) throw new Error('Block height must be < 500,000,000');
 
-  let locktime: string = block
-    ? block.toString(16)
-    : (utc as number).toString(16);
+  let locktime: string = block.toString(16);
   locktime.length % 2 !== 0 ? (locktime = '0' + locktime) : '';
-  const opcode: string = isAbsolute
-    ? Opcode.OP_CHECKLOCKTIMEVERIFY
-    : Opcode.OP_CHECKSEQUENCEVERIFY;
+  const opcode: string = Opcode.OP_CHECKLOCKTIMEVERIFY;
   return (
     (await pushData(locktime)) +
     (await reverseHex(locktime)) +
