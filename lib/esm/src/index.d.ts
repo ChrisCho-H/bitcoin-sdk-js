@@ -1,4 +1,4 @@
-export { Transaction } from './transaction.js';
+export { Transaction, UTXO, Target } from './transaction.js';
 export * as script from './script.js';
 export * as address from './address.js';
 export * as wallet from './wallet.js';
