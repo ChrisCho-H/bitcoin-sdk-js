@@ -1,14 +1,16 @@
 {
   "name": "bitcoin-sdk-js",
   "version": "0.0.1",
-  "description": "bitcoin javascript library for web, mobile and server.",
+  "description": "Bitcoin Typescript SDK for Node, Browser and Mobile.",
   "type": "module",
   "keywords": [
     "bitcoin",
     "bitcoin-sdk",
     "bitcoin-js",
     "bitcoinjs",
-    "bitcoinjs-lib"
+    "bitcoin-sdk-js",
+    "bitcoinjs-lib",
+    "bitcoin-ts"
   ],
   "repository": {
     "type": "git",
