@@ -10,7 +10,7 @@ including **advanced smart contract like multisig, hashlock, timelock and combin
 
 ## Install
 ``` bash
-npm install bitcoin-wallet-sdk
+npm install bitcoin-sdk-js
 ```
 ## How To Use
 ``` javascript
