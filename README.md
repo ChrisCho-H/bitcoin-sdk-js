@@ -6,7 +6,7 @@ _Bitcoin is hard. Especially for those not familiar with crypto, it is even hard
 to create a simple bitcoin transaction._
 
 bitcoin-sdk-js provides various features which help to **create various type of bitcoin transaction so easily🚀**,
-including **advanced smart contract like multisig, hashlock, timelock and combination of them😍**.
+including **advanced smart contract like multisig, hashlock, timelock, combination of them, and even your own smart contract**.
 
 ## Install
 ``` bash
@@ -17,10 +17,6 @@ npm install bitcoin-sdk-js
 
 import * as bitcoin from 'bitcoin-sdk-js';
 
-const value = 1; // unit is bitcoin
-const fee = 0.00001; // unit is bitcoin
-const txId = '1192fefcee7fc7a6a64563d0899fdcf00585f69f3564c1e73e8b7d480f45900c';
-
 // initialize Bitcoin Transaction object
 const tx = new bitcoin.Transaction();
 
@@ -28,7 +24,7 @@ const tx = new bitcoin.Transaction();
 await tx.addInput({
   id: txId, // transaction id of utxo
   index: 0, // index of utxo in transaction
-  value: value, // value of utxo
+  value: value, // value of utxo(unit is bitcoin)
 } as bitcoin.UTXO);
 
 // add Target output to send Bitcoin
@@ -145,6 +141,68 @@ await tx.unlockHashInput(
 const txToBroadcast: string = await tx.getSignedHex();
 
 ```
+
+## Advanced feature
+### Custom smart contract
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js';
+
+// You can send and spend any smart contract. Below example is classic HTLC
+const HTLC = bitcoin.Opcode.OP_IF +
+        (await bitcoin.script.generateTimeLockScript(2576085)) +
+        (await bitcoin.data.pushData(pubkey1)) + // must specify data to read(if not opcode)
+        pubkey1 +
+        bitcoin.Opcode.OP_ELSE +
+        (await bitcoin.script.generateHashLockScript('abcdef')) +
+        (await bitcoin.data.pushData(pubkey2)) + // must specify data to read(if not opcode)
+        pubkey2 +
+        bitcoin.Opcode.OP_ENDIF +
+        bitcoin.Opcode.OP_CHECKSIG
+// p2sh address, custom contract address must be p2sh(p2wsh)
+const toAddress = await bitcoin.address.generateScriptAddress(HTLC);
+
+// Then, can be spent as an input by signing by scriptSig!
+await tx.setLocktime(2576085); // if transaction use timelock input, must set tx locktime bigger than input timelock
+// spend by executing OP_IF branch
+await tx.signInputByScriptSig(
+    // script sig list(order matters!!! bitcoin script is stack-based LIFO)
+    [
+      await bitcoin.crypto.sign(
+        // method to get input message hash to sign
+        await tx.getInputHashToSign(
+          HTLC, // redeem script as p2sh
+          0, // input index
+        ),
+        privkey1, // signer private key
+      ),
+      '01', // execute OP_IF(if legacy(not segwit), OP_1 instead of '01') 
+    ],
+    HTLC, // redeem script as p2sh
+    0, // input index
+  );
+// Or spend by executing OP_ELSE branch
+await tx.signInputByScriptSig(
+    // script sig list(order matters!!! bitcoin script is stack-based LIFO)
+    [
+      await bitcoin.crypto.sign(
+        // method to get input message hash to sign
+        await tx.getInputHashToSign(
+          HTLC, // redeem script as p2sh
+          0, // input index
+        ),
+        privkey2, // signer private key
+      ),
+      'abcdef', // unlock hash
+      '', // execute OP_ELSE 
+    ],
+    HTLC, // redeem script as p2sh
+    0, // input index
+  );
+
+
+```
+
 
 ## 📜 License
 This software is licensed under the MIT ©.
