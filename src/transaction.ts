@@ -3,7 +3,7 @@ import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
 import { Opcode } from './opcode.js';
 import { hash256 } from './crypto.js';
 import { padZeroHexN, reverseHex } from './encode.js';
-import { getVarInt, pushData } from './pushdata.js';
+import { getVarInt, pushData } from './data.js';
 import {
   generateHashLockScript,
   generateMultiSigScript,
@@ -188,6 +188,64 @@ export class Transaction {
       (witness.length === this._inputs.length * 2 ? '' : witness) +
       this._locktime
     );
+  };
+
+  // below are for custom smart contract
+  public getInputHashToSign = async (
+    redeemScript: string,
+    index: number,
+    type: 'legacy' | 'segwit' = 'segwit',
+  ): Promise<Uint8Array> => {
+    const unsignedTx = await this._finalize();
+    const sigHashType: string = '01000000';
+
+    // op_pushdata and length in hex
+    const scriptCodeLength: string =
+      type === 'segwit'
+        ? await getVarInt(redeemScript.length / 2)
+        : await pushData(redeemScript);
+    // add script length except op_pushdata(will add after sign)
+    const scriptCode: string =
+      scriptCodeLength.length === 2 || type === 'segwit'
+        ? scriptCodeLength + redeemScript
+        : scriptCodeLength.slice(2) + redeemScript;
+
+    return await this._getHashToSign(
+      unsignedTx,
+      sigHashType,
+      index,
+      scriptCode,
+      type === 'segwit',
+    );
+  };
+
+  public signInputByScriptSig = async (
+    sigList: string[],
+    redeemScript: string,
+    index: number,
+    type: 'legacy' | 'segwit' = 'segwit',
+  ): Promise<void> => {
+    if (type === 'segwit') {
+      // witness stack item count (including redeem script)
+      const witnessCount = await getVarInt(sigList.length + 1);
+      let scriptSig = '';
+      // encode bytes to read each witness item
+      for (let i = 0; i < sigList.length; i++) {
+        scriptSig += (await getVarInt(sigList[i].length / 2)) + sigList[i];
+      }
+      // encode bytes to read redeem script
+      scriptSig += (await getVarInt(redeemScript.length / 2)) + redeemScript;
+      await this._setWitnessScriptSig(index, scriptSig, witnessCount);
+    } else {
+      let scriptSig = '';
+      // encode bytes to read each sig item
+      for (let i = 0; i < sigList.length; i++) {
+        scriptSig += (await pushData(sigList[i])) + sigList[i];
+      }
+      // encode bytes to read redeem script
+      scriptSig += (await pushData(redeemScript)) + redeemScript;
+      await this._setInputScriptSig(index, scriptSig);
+    }
   };
 
   public getId = async (): Promise<string> => {

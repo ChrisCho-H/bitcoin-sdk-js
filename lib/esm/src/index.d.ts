@@ -5,3 +5,4 @@ export * as wallet from './wallet.js';
 export { Opcode } from './opcode.js';
 export * as crypto from './crypto.js';
 export * as encode from './encode.js';
+export * as data from './data.js';

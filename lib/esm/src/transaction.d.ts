@@ -30,6 +30,8 @@ export declare class Transaction {
     multiSignInput: (pubkey: string[], privkey: string[], index: number, type?: 'legacy' | 'segwit', timeLockScript?: string, secretHex?: string) => Promise<void>;
     unlockHashInput: (secretHex: string, index: number, type?: 'legacy' | 'segwit', timeLockScript?: string) => Promise<void>;
     getSignedHex: () => Promise<string>;
+    getInputHashToSign: (redeemScript: string, index: number, type?: 'legacy' | 'segwit') => Promise<Uint8Array>;
+    signInputByScriptSig: (sigList: string[], redeemScript: string, index: number, type?: 'legacy' | 'segwit') => Promise<void>;
     getId: () => Promise<string>;
     setLocktime: (block: number) => Promise<void>;
     disableRBF: () => Promise<void>;
