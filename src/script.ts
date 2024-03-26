@@ -1,6 +1,6 @@
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import bs58 from 'bs58';
-import { bech32 } from 'bech32';
+import { bech32, bech32m } from 'bech32';
 import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './data.js';
@@ -13,6 +13,12 @@ export const getScriptByAddress = async (address: string): Promise<string> => {
       new Uint8Array(bech32.fromWords(bech32.decode(address).words.slice(1))),
     );
     return Opcode.OP_0 + (await pushData(hash)) + hash;
+  } else if (address.slice(0, 4) === 'bc1p' || address.slice(0, 4) === 'tb1p') {
+    const tapTweakedPubkey: string = bytesToHex(
+      new Uint8Array(bech32m.fromWords(bech32m.decode(address).words.slice(1))),
+    );
+    // taproot is segwit v1
+    return Opcode.OP_1 + (await pushData(tapTweakedPubkey)) + tapTweakedPubkey;
   } else {
     // legacy uses base58
     const hash: string = bytesToHex(bs58.decode(address).slice(1, 21));
@@ -56,9 +62,15 @@ export const generateScriptHash = async (
 
 export const generateSingleSigScript = async (
   pubkey: string,
+  type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
 ): Promise<string> => {
-  if (pubkey.length !== 66)
+  if (type !== 'taproot' && pubkey.length !== 66)
     throw new Error('pubkey must be compressed 33 bytes');
+  if (type === 'taproot' && pubkey.length !== 64)
+    throw new Error('schnorr pubkey must be tweaked 32 bytes');
+  if (type === 'taproot') {
+    return '20' + pubkey + Opcode.OP_CHECKSIG;
+  }
   const pubkeyHash: string = bytesToHex(await hash160(hexToBytes(pubkey)));
   return (
     Opcode.OP_DUP +

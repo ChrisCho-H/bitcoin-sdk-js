@@ -1,7 +1,7 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
 import { Opcode } from './opcode.js';
-import { hash256 } from './crypto.js';
+import { hash256, sha256, sign } from './crypto.js';
 import { padZeroHexN, reverseHex } from './encode.js';
 import { getVarInt, pushData } from './data.js';
 import {
@@ -10,11 +10,13 @@ import {
   generateSingleSigScript,
   getScriptByAddress,
 } from './script.js';
+import { getTapSigHash } from './tapscript.js';
 
 export interface UTXO {
   id: string;
   index: number;
   value: number; // required in segWit
+  script?: string; // required in taproot
 }
 
 export interface Target {
@@ -30,6 +32,7 @@ export class Transaction {
   private _outputs: Target[];
   private _inputScriptArr: string[];
   private _outputScriptArr: string[];
+  private _inputAmountArr: string[];
   private _unsignedTx: string;
   private _sequence: string;
   private _segWitMarker = '00';
@@ -37,6 +40,7 @@ export class Transaction {
   private _witness: Map<number, string>;
   private _witnessMsgPrefix: Uint8Array;
   private _witnessMsgSuffix: Uint8Array;
+  private _taprootMsgPrefix: Uint8Array;
 
   constructor() {
     this._inputs = [];
@@ -45,11 +49,13 @@ export class Transaction {
     this._locktime = '00000000';
     this._inputScriptArr = [];
     this._outputScriptArr = [];
+    this._inputAmountArr = [];
     this._unsignedTx = '';
     this._sequence = 'fdffffff'; // enable locktime and rbf as default
     this._witness = new Map<number, string>();
     this._witnessMsgPrefix = new Uint8Array(); // before outpoint
     this._witnessMsgSuffix = new Uint8Array(); // after sequence
+    this._taprootMsgPrefix = new Uint8Array(); // before
   }
 
   public addInput = async (utxo: UTXO): Promise<void> => {
@@ -69,7 +75,7 @@ export class Transaction {
   public signAll = async (
     pubkey: string,
     privkey: string,
-    type: 'legacy' | 'segwit' = 'segwit',
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
     timeLockScript = '',
     secretHex = '',
   ): Promise<void> => {
@@ -86,12 +92,15 @@ export class Transaction {
     pubkey: string,
     privkey: string,
     index: number,
-    type: 'legacy' | 'segwit' = 'segwit',
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
     timeLockScript = '',
     secretHex = '',
   ): Promise<void> => {
-    if (pubkey.length !== 66)
+    if (type !== 'taproot' && pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
+    if (type === 'taproot' && pubkey.length !== 0)
+      throw new Error('schnorr pubkey is not required for taproot');
+
     if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
 
     const unsignedTx = await this._finalize();
@@ -103,7 +112,7 @@ export class Transaction {
       false,
       timeLockScript,
       secretHex,
-      type === 'segwit' ? true : false,
+      type,
     );
   };
 
@@ -111,7 +120,7 @@ export class Transaction {
     pubkey: string[],
     privkey: string[],
     index: number,
-    type: 'legacy' | 'segwit' = 'segwit',
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
     timeLockScript = '',
     secretHex = '',
   ): Promise<void> => {
@@ -124,7 +133,7 @@ export class Transaction {
       true,
       timeLockScript,
       secretHex,
-      type === 'segwit' ? true : false,
+      type,
     );
   };
 
@@ -194,7 +203,7 @@ export class Transaction {
   public getInputHashToSign = async (
     redeemScript: string,
     index: number,
-    type: 'legacy' | 'segwit' = 'segwit',
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
   ): Promise<Uint8Array> => {
     const unsignedTx = await this._finalize();
     const sigHashType: string = '01000000';
@@ -215,7 +224,7 @@ export class Transaction {
       sigHashType,
       index,
       scriptCode,
-      type === 'segwit',
+      type,
     );
   };
 
@@ -308,8 +317,16 @@ export class Transaction {
         (await reverseHex(await padZeroHexN(input.index.toString(16), 8))) +
         Opcode.OP_0 + // will be replaced into scriptPubKey to sign
         this._sequence;
+      // for segwit, little endian input amount list
+      const inputAmount: string = await reverseHex(
+        await padZeroHexN(
+          Math.floor((input.value as number) * 10 ** 8).toString(16),
+          16,
+        ),
+      );
 
       this._inputScriptArr.push(inputScript);
+      this._inputAmountArr.push(inputAmount);
     }
 
     return this._inputScriptArr;
@@ -340,7 +357,7 @@ export class Transaction {
 
   private _finalizeSegwit = async (): Promise<void> => {
     const versionByte: Uint8Array = hexToBytes(this._version);
-    const prevHash: Uint8Array = await hash256(
+    const prevHash: Uint8Array = await sha256(
       hexToBytes(
         this._inputScriptArr
           .reduce(
@@ -351,19 +368,64 @@ export class Transaction {
           .slice(2),
       ),
     );
-    const sequenceHash: Uint8Array = await hash256(
+    const sequenceHash: Uint8Array = await sha256(
       hexToBytes(this._sequence.repeat(this._inputs.length)),
     );
     this._witnessMsgPrefix = new Uint8Array([
       ...versionByte,
-      ...prevHash,
-      ...sequenceHash,
+      ...(await sha256(prevHash)),
+      ...(await sha256(sequenceHash)),
     ]);
-    const outputHash: Uint8Array = await hash256(
+    const outputHash: Uint8Array = await sha256(
       hexToBytes(this._outputScriptArr.join('').slice(2)),
     );
+    // below are little endians
     const lockTimeByte: Uint8Array = hexToBytes(this._locktime);
-    this._witnessMsgSuffix = new Uint8Array([...outputHash, ...lockTimeByte]);
+    this._witnessMsgSuffix = new Uint8Array([
+      ...(await sha256(outputHash)),
+      ...lockTimeByte,
+    ]);
+
+    // taproot
+    await this._finalizeTaproot(
+      versionByte,
+      lockTimeByte,
+      prevHash,
+      sequenceHash,
+      outputHash,
+    );
+  };
+
+  private _finalizeTaproot = async (
+    versionByte: Uint8Array,
+    lockTimeByte: Uint8Array,
+    prevHash: Uint8Array,
+    sequenceHash: Uint8Array,
+    outputHash: Uint8Array,
+  ): Promise<void> => {
+    const valueHash: Uint8Array = await sha256(
+      hexToBytes(this._inputAmountArr.join('')),
+    );
+
+    let scriptPubKeyJoined = '';
+
+    for (const input of this._inputs) {
+      scriptPubKeyJoined +=
+        (await getVarInt((input.script?.length as number) / 2)) + input.script;
+    }
+    const scriptPubKeyHash: Uint8Array = await sha256(
+      hexToBytes(scriptPubKeyJoined),
+    );
+
+    this._taprootMsgPrefix = new Uint8Array([
+      ...versionByte,
+      ...lockTimeByte,
+      ...prevHash,
+      ...valueHash,
+      ...scriptPubKeyHash,
+      ...sequenceHash,
+      ...outputHash,
+    ]);
   };
 
   private _sign = async (
@@ -374,42 +436,49 @@ export class Transaction {
     isMultiSig: boolean,
     timeLockScript = '',
     secretHex = '',
-    isSegWit: boolean,
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
   ): Promise<void> => {
     // get script pub key to sign
     let scriptCode: string = '';
-    // hash lock redeem script if unlock hash exists
-    let hashLockScript: string = '';
-    if (secretHex.length !== 0) {
-      hashLockScript = await generateHashLockScript(secretHex);
-      // if secretHex not even, pad 0 at last
-      secretHex.length % 2 !== 0 ? (secretHex += '0') : '';
-      // add bytes to read secretHex
-      secretHex =
-        (isSegWit
-          ? await getVarInt(secretHex.length / 2)
-          : await pushData(secretHex)) + secretHex;
-    }
-
-    if (!isMultiSig) {
-      // default script sig type is p2pkh
-      const p2pkh = await generateSingleSigScript(pubkey[0]);
-      scriptCode = timeLockScript + hashLockScript + p2pkh;
-    } else {
-      // multi sig type of p2sh script
-      const p2sh: string = await generateMultiSigScript(privkey.length, pubkey);
-      scriptCode = timeLockScript + hashLockScript + p2sh;
+    // if taproot, no need for script code
+    if (type !== 'taproot') {
+      // hash lock redeem script if unlock hash exists
+      let hashLockScript: string = '';
+      if (secretHex.length !== 0) {
+        hashLockScript = await generateHashLockScript(secretHex);
+        // if secretHex not even, pad 0 at last
+        secretHex.length % 2 !== 0 ? (secretHex += '0') : '';
+        // add bytes to read secretHex
+        secretHex =
+          (type !== 'legacy'
+            ? await getVarInt(secretHex.length / 2)
+            : await pushData(secretHex)) + secretHex;
+      }
+      if (!isMultiSig) {
+        // default script sig type is p2pkh
+        const p2pkh = await generateSingleSigScript(pubkey[0]);
+        scriptCode = timeLockScript + hashLockScript + p2pkh;
+      } else {
+        // multi sig type of p2sh script
+        const p2sh: string = await generateMultiSigScript(
+          privkey.length,
+          pubkey,
+        );
+        scriptCode = timeLockScript + hashLockScript + p2sh;
+      }
     }
     // op_pushdata and length in hex
-    const scriptCodeLength = isSegWit
-      ? await getVarInt(scriptCode.length / 2)
-      : await pushData(scriptCode);
+    const scriptCodeLength =
+      type !== 'legacy'
+        ? await getVarInt(scriptCode.length / 2)
+        : await pushData(scriptCode);
     // add script length except op_pushdata(will add after sign)
-    scriptCode =
-      scriptCodeLength.length === 2 || isSegWit
-        ? scriptCodeLength + scriptCode
-        : scriptCodeLength.slice(2) + scriptCode;
-
+    if (type !== 'taproot') {
+      scriptCode =
+        scriptCodeLength.length === 2 || type !== 'legacy'
+          ? scriptCodeLength + scriptCode
+          : scriptCodeLength.slice(2) + scriptCode;
+    }
     // get msg hash to sign and generate DER signature
     const sigHashType: string = '01000000';
     const msgHash: Uint8Array = await this._getHashToSign(
@@ -417,26 +486,30 @@ export class Transaction {
       sigHashType,
       inputIdx,
       scriptCode,
-      isSegWit,
+      type,
     );
 
     // get script sig to insert
     let scriptSig: string = '';
     if (!isMultiSig) {
       // p2pkh scrip sig
-      const signature: string =
-        secp256k1.sign(msgHash, privkey[0]).toDERHex() +
-        sigHashType.slice(0, 2);
+      const signature: string = await sign(
+        msgHash,
+        privkey[0],
+        sigHashType,
+        type !== 'taproot' ? 'secp256k1' : 'schnorr',
+      );
       scriptSig +=
         (signature.length / 2).toString(16) +
         signature +
-        '21' +
-        pubkey +
-        secretHex;
+        (type !== 'taproot'
+          ? (await pushData(pubkey[0])) + pubkey[0] + secretHex
+          : '');
+
       // scriptPubKey(redeem script) is in script sig if p2sh
       if (timeLockScript.length !== 0 || secretHex.length !== 0)
         scriptSig +=
-          (scriptCodeLength.length !== 2 && !isSegWit
+          (scriptCodeLength.length !== 2 && type === 'legacy'
             ? scriptCodeLength.slice(0, 2)
             : '') + scriptCode; // pushdata
     } else {
@@ -455,22 +528,25 @@ export class Transaction {
       scriptSig +=
         multiSig +
         secretHex +
-        (scriptCodeLength.length !== 2 && !isSegWit
+        (scriptCodeLength.length !== 2 && type === 'legacy'
           ? scriptCodeLength.slice(0, 2)
           : '') + // pushdata
         scriptCode;
     }
-    isSegWit
+
+    type !== 'legacy'
       ? await this._setWitnessScriptSig(
           inputIdx,
           scriptSig,
-          await this._getWitnessItemCount(
-            pubkey,
-            privkey,
-            isMultiSig,
-            timeLockScript,
-            secretHex,
-          ),
+          type === 'taproot'
+            ? '01'
+            : await this._getWitnessItemCount(
+                pubkey,
+                privkey,
+                isMultiSig,
+                timeLockScript,
+                secretHex,
+              ),
         )
       : await this._setInputScriptSig(inputIdx, scriptSig);
   };
@@ -480,14 +556,30 @@ export class Transaction {
     sigHashType: string,
     inputIdx: number,
     scriptCode: string,
-    isSegWit: boolean,
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
   ): Promise<Uint8Array> => {
     // index to insert script sig
     if (inputIdx > this._inputs.length - 1)
       throw new Error(
         `Out of range, tx contains only ${this._inputs.length} inputs`,
       );
-    if (isSegWit) {
+    if (type === 'taproot') {
+      const epoch: number = 0;
+      const spendType: number = 0; // no annex
+      // little endian
+      const inputIdxBytes: Uint8Array = await hexToBytes(
+        await padZeroHexN(inputIdx.toString(16), 8),
+      ).reverse();
+      return await getTapSigHash(
+        new Uint8Array([
+          epoch,
+          parseInt(sigHashType.slice(0, 2)),
+          ...this._taprootMsgPrefix,
+          spendType,
+          ...inputIdxBytes,
+        ]),
+      );
+    } else if (type === 'segwit') {
       // below are little endians
       const outpointByte: Uint8Array = hexToBytes(
         this._inputScriptArr[inputIdx + 1].slice(0, 72),
