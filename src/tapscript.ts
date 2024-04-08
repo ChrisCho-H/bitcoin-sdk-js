@@ -7,14 +7,24 @@ const tapLeafTagHex: string = '5461704c656166'; // 'TapLeaf' in UTF-8
 const tapBranchTagHex: string = '5461704272616e6368'; // 'TapBranch' in UTF-8
 const tapTweakTagHex: string = '546170547765616b'; // 'TapTweak' in UTF-8
 const tapSighashTagHex: string = '54617053696768617368'; // 'TapSigHash' in UTF-8
-const version: number = 0xc0 & 0xfe;
 
-export const getTapLeaf = async (script: string): Promise<Uint8Array> => {
+interface TapTweakedPubkey {
+  parityBit: '02' | '03';
+  tweakedPubKey: string;
+}
+
+export const getTapLeaf = async (
+  script: string,
+  tapLeafVersion = 0xc0,
+): Promise<Uint8Array> => {
   return await sha256(
     new Uint8Array([
       ...(await getTapTag(tapLeafTagHex)),
       ...(await hexToBytes(
-        version.toString(16) + (await getVarInt(script.length / 2)) + script,
+        // make tap leaf version even
+        (tapLeafVersion & 0xfe).toString(16) +
+          (await getVarInt(script.length / 2)) +
+          script,
       )),
     ]),
   );
@@ -64,17 +74,17 @@ export const getTapTag = async (tapTagHex: string): Promise<Uint8Array> => {
 export const getTapTweakedPubkey = async (
   schnorrPubkey: string,
   tapTweak: Uint8Array,
-): Promise<string> => {
+): Promise<TapTweakedPubkey> => {
   const P = schnorr.utils.lift_x(
     schnorr.utils.bytesToNumberBE(await hexToBytes(schnorrPubkey)),
   );
   const Q = P.add(secp256k1.ProjectivePoint.fromPrivateKey(tapTweak)); // Q = point_add(P, point_mul(G, t))
-  return await bytesToHex(
-    new Uint8Array([
-      // Q.hasEvenY() ? 2 : 3,
-      ...schnorr.utils.pointToBytes(Q),
-    ]),
-  ); // bytes_from_int(x(Q))
+  return {
+    parityBit: Q.hasEvenY() ? '02' : '03',
+    tweakedPubKey: await bytesToHex(
+      new Uint8Array([...schnorr.utils.pointToBytes(Q)]),
+    ),
+  }; // bytes_from_int(x(Q))
 };
 
 export const getTapTweakedPrivkey = async (
@@ -106,5 +116,17 @@ export const getTapSigHash = async (
 ): Promise<Uint8Array> => {
   return await sha256(
     new Uint8Array([...(await getTapTag(tapSighashTagHex)), ...sigMsg]),
+  );
+};
+
+export const getTapControlBlock = async (
+  schnorrPubkey: string,
+  tapLeaf: Uint8Array,
+  tweakedPubKeyParityBit: '02' | '03',
+  tapLeafVersion = 0xc0,
+): Promise<string> => {
+  tapLeafVersion += tweakedPubKeyParityBit === '02' ? 0x00 : 0x01;
+  return (
+    tapLeafVersion.toString(16) + schnorrPubkey + (await bytesToHex(tapLeaf))
   );
 };

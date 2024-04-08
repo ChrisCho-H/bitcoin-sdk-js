@@ -22,9 +22,10 @@ export const sha256 = async (hex: Uint8Array): Promise<Uint8Array> => {
 export const sign = async (
   msgHash: Uint8Array,
   privkey: string,
-  sigHashType = '01000000',
   type: 'secp256k1' | 'schnorr' = 'secp256k1',
+  sigHashType = '01000000',
 ): Promise<string> => {
+  if (sigHashType === '01000000' && type !== 'secp256k1') sigHashType = '';
   return (
     (type === 'secp256k1'
       ? secp256k1.sign(msgHash, privkey).toDERHex()
