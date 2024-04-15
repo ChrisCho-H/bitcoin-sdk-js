@@ -26,7 +26,7 @@ export const getScriptByAddress = async (address: string): Promise<string> => {
       // p2sh or p2wsh
       return (
         Opcode.OP_HASH160 +
-        '14' + // anything smaller than 4c is byte length to read
+        (await pushData(hash)) + // anything smaller than 4c is byte length to read
         hash +
         Opcode.OP_EQUAL
       );
@@ -35,7 +35,7 @@ export const getScriptByAddress = async (address: string): Promise<string> => {
       return (
         Opcode.OP_DUP +
         Opcode.OP_HASH160 +
-        '14' + // anything smaller than 4c is byte length to read
+        (await pushData(hash)) + // anything smaller than 4c is byte length to read
         hash +
         Opcode.OP_EQUALVERIFY +
         Opcode.OP_CHECKSIG
@@ -66,16 +66,16 @@ export const generateSingleSigScript = async (
 ): Promise<string> => {
   if (type !== 'taproot' && pubkey.length !== 66)
     throw new Error('pubkey must be compressed 33 bytes');
-  if (type === 'taproot' && pubkey.length !== 64)
-    throw new Error('schnorr pubkey must be tweaked 32 bytes');
   if (type === 'taproot') {
-    return '20' + pubkey + Opcode.OP_CHECKSIG;
+    if (pubkey.length !== 64)
+      throw new Error('schnorr pubkey must be tweaked 32 bytes');
+    return (await pushData(pubkey)) + pubkey + Opcode.OP_CHECKSIG;
   }
   const pubkeyHash: string = bytesToHex(await hash160(hexToBytes(pubkey)));
   return (
     Opcode.OP_DUP +
     Opcode.OP_HASH160 +
-    '14' + // anything smaller than 4c is byte length to read
+    (await pushData(pubkeyHash)) + // anything smaller than 4c is byte length to read
     pubkeyHash +
     Opcode.OP_EQUALVERIFY +
     Opcode.OP_CHECKSIG
@@ -97,9 +97,9 @@ export const generateMultiSigScript = async (
 
   // multi sig type of p2sh script
   const p2sh: string =
-    (80 + privkeyCount).toString(16) + // m signatures
+    (0x50 + privkeyCount).toString(16) + // m signatures(OP_M)
     pubkeyJoin +
-    (80 + pubkeys.length).toString(16) + // n pubkeys
+    (0x50 + pubkeys.length).toString(16) + // n pubkeys(OP_N)
     Opcode.OP_CHECKMULTISIG;
   return p2sh;
 };
@@ -130,7 +130,7 @@ export const generateHashLockScript = async (
 
   return (
     Opcode.OP_HASH256 +
-    '20' +
+    '20' + // hash256 always return 32 bytes
     bytesToHex(await hash256(hexToBytes(secretHex))) +
     Opcode.OP_EQUALVERIFY // not OP_EQUAL to use with other script
   );

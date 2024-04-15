@@ -3,12 +3,20 @@ import { getVarInt } from './data.js';
 import { bytesToHex, hexToBytes } from './encode.js';
 import { secp256k1, schnorr } from '@noble/curves/secp256k1';
 
-const tapLeafTagHex: string = '5461704c656166'; // 'TapLeaf' in UTF-8
-const tapBranchTagHex: string = '5461704272616e6368'; // 'TapBranch' in UTF-8
-const tapTweakTagHex: string = '546170547765616b'; // 'TapTweak' in UTF-8
-const tapSighashTagHex: string = '54617053696768617368'; // 'TapSigHash' in UTF-8
+const tapLeafTagBytes: Uint8Array = new Uint8Array([
+  84, 97, 112, 76, 101, 97, 102,
+]); // 'TapLeaf' in UTF-8
+const tapBranchTagBytes: Uint8Array = new Uint8Array([
+  84, 97, 112, 66, 114, 97, 110, 99, 104,
+]); // 'TapBranch' in UTF-8
+const tapTweakTagBytes: Uint8Array = new Uint8Array([
+  84, 97, 112, 84, 119, 101, 97, 107,
+]); // 'TapTweak' in UTF-8
+const tapSighashTagBytes: Uint8Array = new Uint8Array([
+  84, 97, 112, 83, 105, 103, 104, 97, 115, 104,
+]); // 'TapSigHash' in UTF-8
 
-interface TapTweakedPubkey {
+export interface TapTweakedPubkey {
   parityBit: '02' | '03';
   tweakedPubKey: string;
 }
@@ -19,7 +27,7 @@ export const getTapLeaf = async (
 ): Promise<Uint8Array> => {
   return await sha256(
     new Uint8Array([
-      ...(await getTapTag(tapLeafTagHex)),
+      ...(await getTapTag(tapLeafTagBytes)),
       ...(await hexToBytes(
         // make tap leaf version even
         (tapLeafVersion & 0xfe).toString(16) +
@@ -37,37 +45,43 @@ export const getTapBranch = async (
     throw new Error('TapLeaf pair length must be 2');
   if (tapLeafPair[0]?.length !== 32 || tapLeafPair[1]?.length !== 32)
     throw new Error('TapLeaf must be 32 bytes hex');
-  // To do. compare hex in lexical
-  const orderedTapPair: Uint8Array = new Uint8Array(
-    BigInt('0x' + (await bytesToHex(tapLeafPair[0]))) <
-    BigInt('0x' + (await bytesToHex(tapLeafPair[1])))
-      ? [...tapLeafPair[0], ...tapLeafPair[1]]
-      : [...tapLeafPair[1], ...tapLeafPair[0]],
-  );
+  // compare hex in lexical
+  let mergedTapPair = new Uint8Array([...tapLeafPair[0], ...tapLeafPair[1]]);
+  for (let i: number = 0; i < tapLeafPair[0]?.length; i++) {
+    if (tapLeafPair[0][i] === tapLeafPair[1][i]) continue;
+    mergedTapPair = new Uint8Array(
+      tapLeafPair[0][i] < tapLeafPair[1][i]
+        ? [...tapLeafPair[0], ...tapLeafPair[1]]
+        : [...tapLeafPair[1], ...tapLeafPair[0]],
+    );
+    break;
+  }
   return await sha256(
-    new Uint8Array([...(await getTapTag(tapBranchTagHex)), ...orderedTapPair]),
+    new Uint8Array([...(await getTapTag(tapBranchTagBytes)), ...mergedTapPair]),
   );
 };
 
 export const getTapTweak = async (
   schnorrPubkey: string,
-  tapRoot: Uint8Array,
+  taproot: Uint8Array,
 ): Promise<Uint8Array> => {
   if (schnorrPubkey.length !== 64)
     throw new Error('Schnorr public key length must be 32 bytes hex');
-  if (tapRoot.length !== 32) throw new Error('TapRoot must be 32 bytes hex');
+  if (taproot.length !== 32) throw new Error('TapRoot must be 32 bytes hex');
 
   return await sha256(
     new Uint8Array([
-      ...(await getTapTag(tapTweakTagHex)),
+      ...(await getTapTag(tapTweakTagBytes)),
       ...(await hexToBytes(schnorrPubkey)),
-      ...tapRoot,
+      ...taproot,
     ]),
   );
 };
 
-export const getTapTag = async (tapTagHex: string): Promise<Uint8Array> => {
-  const tapTagHash: Uint8Array = await sha256(await hexToBytes(tapTagHex));
+export const getTapTag = async (
+  tapTagBytes: Uint8Array,
+): Promise<Uint8Array> => {
+  const tapTagHash: Uint8Array = await sha256(tapTagBytes);
   return new Uint8Array([...tapTagHash, ...tapTagHash]);
 };
 
@@ -115,7 +129,7 @@ export const getTapSigHash = async (
   sigMsg: Uint8Array,
 ): Promise<Uint8Array> => {
   return await sha256(
-    new Uint8Array([...(await getTapTag(tapSighashTagHex)), ...sigMsg]),
+    new Uint8Array([...(await getTapTag(tapSighashTagBytes)), ...sigMsg]),
   );
 };
 

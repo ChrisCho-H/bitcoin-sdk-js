@@ -12,10 +12,11 @@ import {
 import { getTapLeaf, getTapSigHash } from './tapscript.js';
 
 export interface UTXO {
-  id: string;
+  txHash: string;
   index: number;
   value: number; // required in segWit
   script?: string; // required in taproot
+  sequence?: string; // default to 'fdffffff'
 }
 
 export interface Target {
@@ -24,19 +25,31 @@ export interface Target {
   value: number;
 }
 
+// for internal use
+interface InputScript {
+  txHash: string;
+  index: string;
+  scriptSig: string;
+  sequence: string;
+  amount: string;
+}
+interface OutputScript {
+  value: string;
+  scriptPubKey: string;
+}
+
 export class Transaction {
-  private _version: string;
-  private _locktime: string;
   private _inputs: UTXO[];
   private _outputs: Target[];
-  private _inputScriptArr: string[];
-  private _outputScriptArr: string[];
-  private _inputAmountArr: string[];
-  private _unsignedTx: string;
-  private _sequence: string;
+  private _inputScript: Map<number, InputScript>;
+  private _outputScript: Map<number, OutputScript>;
+  private _witness: Map<number, string>;
+  private _version = '01000000';
+  private _locktime = '00000000';
+  private _defaultSequence = 'fdffffff'; // enable locktime and rbf as default
+  private _unsignedTx = '';
   private _segWitMarker = '00';
   private _segWitFlag = '01';
-  private _witness: Map<number, string>;
   private _witnessMsgPrefix: Uint8Array;
   private _witnessMsgSuffix: Uint8Array;
   private _taprootMsgPrefix: Uint8Array;
@@ -44,14 +57,9 @@ export class Transaction {
   constructor() {
     this._inputs = [];
     this._outputs = [];
-    this._version = '01000000';
-    this._locktime = '00000000';
-    this._inputScriptArr = [];
-    this._outputScriptArr = [];
-    this._inputAmountArr = [];
-    this._unsignedTx = '';
-    this._sequence = 'fdffffff'; // enable locktime and rbf as default
     this._witness = new Map<number, string>();
+    this._inputScript = new Map<number, InputScript>();
+    this._outputScript = new Map<number, OutputScript>();
     this._witnessMsgPrefix = new Uint8Array(); // before outpoint
     this._witnessMsgSuffix = new Uint8Array(); // after sequence
     this._taprootMsgPrefix = new Uint8Array(); // before
@@ -79,21 +87,26 @@ export class Transaction {
     secretHex = '',
     sigHashType = '01000000',
   ): Promise<void> => {
-    if (pubkey.length !== 66)
+    if (type !== 'taproot' && pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
     if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
 
+    // asynchronously sign all as index determined
+    const promiseList: Promise<void>[] = [];
     for (let i = 0; i < this._inputs.length; i++) {
-      await this.signInput(
-        pubkey,
-        privkey,
-        i,
-        type,
-        timeLockScript,
-        secretHex,
-        sigHashType,
+      promiseList.push(
+        this.signInput(
+          pubkey,
+          privkey,
+          i,
+          type,
+          timeLockScript,
+          secretHex,
+          sigHashType,
+        ),
       );
     }
+    await Promise.all(promiseList);
   };
 
   public signInput = async (
@@ -107,9 +120,6 @@ export class Transaction {
   ): Promise<void> => {
     if (type !== 'taproot' && pubkey.length !== 66)
       throw new Error('pubkey must be compressed 33 bytes');
-    if (type === 'taproot' && pubkey.length !== 0)
-      throw new Error('schnorr pubkey is not required for taproot');
-
     if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
 
     const unsignedTx = await this._finalize();
@@ -130,7 +140,7 @@ export class Transaction {
     pubkey: string[],
     privkey: string[],
     index: number,
-    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
+    type: 'legacy' | 'segwit' = 'segwit',
     timeLockScript = '',
     secretHex = '',
     sigHashType = '01000000',
@@ -197,15 +207,35 @@ export class Transaction {
     // signed tx except witness and locktime
     // add witness field if exists
     let witness: string = '';
-    for (let i = 0; i < this._inputScriptArr.length - 1; i++) {
+    // input count in varInt
+    const inputCount: string = await getVarInt(this._inputs.length);
+    let inputScript: string = inputCount;
+    for (let i = 0; i < this._inputs.length; i++) {
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        i,
+      ) as InputScript;
+      inputScript +=
+        inputScriptSingle.txHash +
+        inputScriptSingle.index +
+        inputScriptSingle.scriptSig +
+        inputScriptSingle.sequence;
       // push witness if exists('00' if not)
       witness += this._witness.has(i) ? this._witness.get(i) : '00';
+    }
+    const outputCount: string = await getVarInt(this._outputs.length);
+    let outputScript: string = outputCount;
+    for (let i: number = 0; i < this._outputs.length; i++) {
+      const outputScriptSingle: OutputScript = this._outputScript.get(
+        i,
+      ) as OutputScript;
+      outputScript +=
+        outputScriptSingle.value + outputScriptSingle.scriptPubKey;
     }
     return (
       this._version +
       (isSegWit ? this._segWitMarker + this._segWitFlag : '') +
-      this._inputScriptArr.join('') +
-      this._outputScriptArr.join('') +
+      inputScript +
+      outputScript +
       (witness.length === this._inputs.length * 2 ? '' : witness) +
       this._locktime
     );
@@ -215,7 +245,7 @@ export class Transaction {
   public getInputHashToSign = async (
     redeemScript: string,
     index: number,
-    type: 'legacy' | 'segwit' | 'tapscript' = 'segwit',
+    type: 'legacy' | 'segwit' | 'taproot' | 'tapscript' = 'segwit',
     sigHashType = '01000000',
     keyVersion = '00',
   ): Promise<Uint8Array> => {
@@ -227,7 +257,7 @@ export class Transaction {
         : await pushData(redeemScript);
     // add script length except op_pushdata(will add after sign)
     const scriptCode: string =
-      type === 'tapscript'
+      type === 'tapscript' || type === 'taproot'
         ? redeemScript
         : scriptCodeLength.length === 2 || type === 'segwit'
         ? scriptCodeLength + redeemScript
@@ -246,9 +276,9 @@ export class Transaction {
   public signInputByScriptSig = async (
     sigStack: string[],
     index: number,
-    type: 'legacy' | 'segwit' = 'segwit',
+    type: 'legacy' | 'segwit' | 'tapscript' = 'segwit',
   ): Promise<void> => {
-    if (type === 'segwit') {
+    if (type === 'segwit' || type === 'tapscript') {
       // witness stack item count (including redeem script)
       const witnessCount = await getVarInt(sigStack.length);
       let scriptSig = '';
@@ -282,12 +312,12 @@ export class Transaction {
 
   public disableRBF = async (): Promise<void> => {
     await this._isSignedCheck('disable rbf');
-    this._sequence = 'feffffff';
+    this._defaultSequence = 'feffffff';
   };
 
   public disableLocktime = async (): Promise<void> => {
     await this._isSignedCheck('disable locktime');
-    this._sequence = 'ffffffff';
+    this._defaultSequence = 'ffffffff';
   };
 
   public isSegWit = async (): Promise<boolean> => {
@@ -298,97 +328,124 @@ export class Transaction {
     // if already finalized, just return
     if (this._unsignedTx.length !== 0) return this._unsignedTx;
 
-    const inputScript: string[] = await this._finalizeInputs();
-    const outputScript: string[] = await this._finalizeOutputs();
+    await Promise.all([this._finalizeInputs(), this._finalizeOutputs()]);
     await this._finalizeSegwit();
 
+    // input count in varInt
+    const inputCount: string = await getVarInt(this._inputs.length);
+    let inputScript: string = inputCount;
+    for (let i: number = 0; i < this._inputs.length; i++) {
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        i,
+      ) as InputScript;
+      inputScript +=
+        inputScriptSingle.txHash +
+        inputScriptSingle.index +
+        inputScriptSingle.scriptSig +
+        inputScriptSingle.sequence;
+    }
+    const outputCount: string = await getVarInt(this._outputs.length);
+    let outputScript: string = outputCount;
+    for (let i: number = 0; i < this._outputs.length; i++) {
+      const outputScriptSingle: OutputScript = this._outputScript.get(
+        i,
+      ) as OutputScript;
+      outputScript +=
+        outputScriptSingle.value + outputScriptSingle.scriptPubKey;
+    }
+
     this._unsignedTx =
-      this._version +
-      inputScript.join('') +
-      outputScript.join('') +
-      this._locktime;
+      this._version + inputScript + outputScript + this._locktime;
 
     return this._unsignedTx;
   };
 
-  private _finalizeInputs = async (): Promise<string[]> => {
+  private _finalizeInputs = async (): Promise<void> => {
     // if already finalized, just return
-    if (this._inputScriptArr.length !== 0) return this._inputScriptArr;
-    // input count in varInt
-    const inputCount: string = await getVarInt(this._inputs.length);
-    this._inputScriptArr.push(inputCount);
+    if (this._inputScript.size !== 0) return;
+
     // get input script hex
-    for (const input of this._inputs) {
+    for (let i = 0; i < this._inputs.length; i++) {
       /* 
-      tx id + tx index + empty script sig + sequence
+      tx hash + tx index + empty script sig + sequence
       */
-      const inputScript: string =
-        (await reverseHex(input.id)) +
-        (await reverseHex(await padZeroHexN(input.index.toString(16), 8))) +
-        Opcode.OP_0 + // will be replaced into scriptPubKey to sign
-        this._sequence;
+      const txHash: string = await reverseHex(this._inputs[i].txHash);
+      const index: string = await reverseHex(
+        await padZeroHexN(this._inputs[i].index.toString(16), 8),
+      );
+      // OP_0 will be replaced into scriptPubKey to sign
+      const scriptSig: string = Opcode.OP_0;
+      const sequence: string = this._inputs[i].sequence
+        ? (this._inputs[i].sequence as string)
+        : this._defaultSequence;
       // for segwit, little endian input amount list
-      const inputAmount: string = await reverseHex(
+      const amount: string = await reverseHex(
         await padZeroHexN(
-          Math.floor((input.value as number) * 10 ** 8).toString(16),
+          Math.floor((this._inputs[i].value as number) * 10 ** 8).toString(16),
           16,
         ),
       );
-
-      this._inputScriptArr.push(inputScript);
-      this._inputAmountArr.push(inputAmount);
+      this._inputScript.set(i, {
+        txHash,
+        index,
+        scriptSig,
+        sequence,
+        amount,
+      });
     }
-
-    return this._inputScriptArr;
   };
 
-  private _finalizeOutputs = async (): Promise<string[]> => {
+  private _finalizeOutputs = async (): Promise<void> => {
     // if already finalized, just return
-    if (this._outputScriptArr.length !== 0) return this._outputScriptArr;
+    if (this._outputScript.size !== 0) return;
     // output count in varInt
-    const outputCount: string = await getVarInt(this._outputs.length);
-    this._outputScriptArr.push(outputCount);
-    // get output script hex
-    for (const output of this._outputs) {
-      const value: string = await reverseHex(
-        await padZeroHexN(Math.floor(output.value * 10 ** 8).toString(16), 16),
-      );
-      const scriptPubKey: string = output.address
-        ? await getScriptByAddress(output.address as string)
-        : (output.script as string);
-      // value + scriptPubKey
-      this._outputScriptArr.push(
-        value + (await getVarInt(scriptPubKey.length / 2)) + scriptPubKey,
-      );
-    }
 
-    return this._outputScriptArr;
+    // get output script hex
+    for (let i: number = 0; i < this._outputs.length; i++) {
+      const value: string = await reverseHex(
+        await padZeroHexN(
+          Math.floor(this._outputs[i].value * 10 ** 8).toString(16),
+          16,
+        ),
+      );
+      const scriptPubKey: string = this._outputs[i].address
+        ? await getScriptByAddress(this._outputs[i].address as string)
+        : (this._outputs[i].script as string);
+      // value + scriptPubKey
+      this._outputScript.set(i, {
+        value: value,
+        scriptPubKey: (await getVarInt(scriptPubKey.length / 2)) + scriptPubKey,
+      });
+    }
   };
 
   private _finalizeSegwit = async (): Promise<void> => {
     const versionByte: Uint8Array = hexToBytes(this._version);
-    const prevHash: Uint8Array = await sha256(
-      hexToBytes(
-        this._inputScriptArr
-          .reduce(
-            (accumulator, currentValue) =>
-              accumulator + currentValue.slice(0, 72),
-            '',
-          )
-          .slice(2),
-      ),
-    );
-    const sequenceHash: Uint8Array = await sha256(
-      hexToBytes(this._sequence.repeat(this._inputs.length)),
-    );
+    let outpoint = '';
+    let sequence = '';
+    for (let i: number = 0; i < this._inputScript.size; i++) {
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        i,
+      ) as InputScript;
+      outpoint += inputScriptSingle.txHash + inputScriptSingle.index;
+      sequence += inputScriptSingle.sequence;
+    }
+    const prevHash: Uint8Array = await sha256(hexToBytes(outpoint));
+    const sequenceHash: Uint8Array = await sha256(hexToBytes(sequence));
     this._witnessMsgPrefix = new Uint8Array([
       ...versionByte,
       ...(await sha256(prevHash)),
       ...(await sha256(sequenceHash)),
     ]);
-    const outputHash: Uint8Array = await sha256(
-      hexToBytes(this._outputScriptArr.join('').slice(2)),
-    );
+    let outputScript = '';
+    for (let i = 0; i < this._outputScript.size; i++) {
+      const outputScriptSingle: OutputScript = this._outputScript.get(
+        i,
+      ) as OutputScript;
+      outputScript +=
+        outputScriptSingle.value + outputScriptSingle.scriptPubKey;
+    }
+    const outputHash: Uint8Array = await sha256(hexToBytes(outputScript));
     // below are little endians
     const lockTimeByte: Uint8Array = hexToBytes(this._locktime);
     this._witnessMsgSuffix = new Uint8Array([
@@ -413,16 +470,18 @@ export class Transaction {
     sequenceHash: Uint8Array,
     outputHash: Uint8Array,
   ): Promise<void> => {
-    const valueHash: Uint8Array = await sha256(
-      hexToBytes(this._inputAmountArr.join('')),
-    );
-
+    let amount = '';
     let scriptPubKeyJoined = '';
-
-    for (const input of this._inputs) {
+    for (let i: number = 0; i < this._inputScript.size; i++) {
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        i,
+      ) as InputScript;
+      amount += inputScriptSingle.amount;
       scriptPubKeyJoined +=
-        (await getVarInt((input.script?.length as number) / 2)) + input.script;
+        (await getVarInt((this._inputs[i].script?.length as number) / 2)) +
+        this._inputs[i].script;
     }
+    const valueHash: Uint8Array = await sha256(hexToBytes(amount));
     const scriptPubKeyHash: Uint8Array = await sha256(
       hexToBytes(scriptPubKeyJoined),
     );
@@ -506,7 +565,7 @@ export class Transaction {
       const signature: string = await sign(
         msgHash,
         privkey[0],
-        type !== 'taproot' ? 'secp256k1' : 'schnorr',
+        type !== 'taproot' ? 'ecdsa' : 'schnorr',
         sigHashType,
       );
       scriptSig +=
@@ -529,12 +588,7 @@ export class Transaction {
       for (let i = 0; i < privkey.length; i++) {
         if (privkey[i].length !== 64)
           throw new Error('privkey must be 32 bytes');
-        const signature = await sign(
-          msgHash,
-          privkey[i],
-          'secp256k1',
-          sigHashType,
-        );
+        const signature = await sign(msgHash, privkey[i], 'ecdsa', sigHashType);
         multiSig += (signature.length / 2).toString(16) + signature;
       }
       // scriptPubKey(redeem script) is in script sig as p2sh
@@ -606,8 +660,11 @@ export class Transaction {
       );
     } else if (type === 'segwit') {
       // below are little endians
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        inputIdx,
+      ) as InputScript;
       const outpointByte: Uint8Array = hexToBytes(
-        this._inputScriptArr[inputIdx + 1].slice(0, 72),
+        inputScriptSingle.txHash + inputScriptSingle.index,
       );
       const scriptCodeByte: Uint8Array = hexToBytes(scriptCode);
       const valueByte: Uint8Array = hexToBytes(
@@ -618,7 +675,10 @@ export class Transaction {
           16,
         ),
       ).reverse();
-      const sequenceByte: Uint8Array = hexToBytes(this._sequence);
+      const sequence: string = this._inputs[inputIdx].sequence
+        ? (this._inputs[inputIdx].sequence as string)
+        : this._defaultSequence;
+      const sequenceByte: Uint8Array = hexToBytes(sequence);
       const sigHashByte: Uint8Array = hexToBytes(sigHashType);
       return await hash256(
         new Uint8Array([
@@ -645,27 +705,27 @@ export class Transaction {
   private _getScriptCodeIdx = async (index: number): Promise<number> => {
     return (
       8 + // tx version
-      this._inputScriptArr[0].length + // tx input count(varInt)
+      (await getVarInt(this._inputs.length)).length + // tx input count(varInt)
       (64 + 8 + 2 + 8) * index + // txid + tx index + empty script sig + sequence
       (64 + 8) // (txid + tx index) of first input
     );
   };
 
   private _setInputScriptSig = async (
-    index: number,
+    inputIdx: number,
     scriptSig: string,
   ): Promise<void> => {
     if (scriptSig.length > 3300)
       throw new Error('script sig must be less than 1650 bytes');
 
-    const inputScript: string = this._inputScriptArr[index + 1];
     const finalInputScript: string =
-      inputScript.slice(0, inputScript.length - 10) +
-      (await getVarInt(scriptSig.length / 2)) +
-      scriptSig +
-      inputScript.slice(inputScript.length - 8);
+      (await getVarInt(scriptSig.length / 2)) + scriptSig;
     // replace unsigned input into signed
-    this._inputScriptArr.splice(index + 1, 1, finalInputScript);
+    const unsignedInputScript: InputScript = this._inputScript.get(
+      inputIdx,
+    ) as InputScript;
+    unsignedInputScript.scriptSig = finalInputScript;
+    this._inputScript.set(inputIdx, unsignedInputScript);
   };
 
   private _setWitnessScriptSig = async (
@@ -700,7 +760,7 @@ export class Transaction {
 
   private _isSignedCheck = async (taskMsg: string): Promise<void> => {
     // if already finalized, at least one input is signed
-    if (this._outputScriptArr.length !== 0)
+    if (this._outputScript.size !== 0)
       throw new Error(`Cannot ${taskMsg} after any of input is signed`);
   };
 }
