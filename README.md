@@ -1,12 +1,14 @@
 ## bitcoin-sdk-js
 
-**✨Bitcoin Typescript SDK for Node, Browser and Mobile✨**
+**✨Bitcoin Smart Contact SDK for Node, Browser and Mobile✨**
 
 _Bitcoin is hard. Especially for those not familiar with crypto, it is even hard
 to create a simple bitcoin transaction._
 
 bitcoin-sdk-js provides various features which help to **create various type of bitcoin transaction so easily🚀**,
 including **advanced smart contract like multisig, hashlock, timelock, combination of them, and even your own smart contract**.
+
+**Legacy, Segwit, Taproot features are all suppoted!**
 
 ## Install
 ``` bash
@@ -22,7 +24,7 @@ const tx = new bitcoin.Transaction();
 
 // add UTXO to spend as input
 await tx.addInput({
-  id: txId, // transaction id of utxo
+  txHash: txId, // transaction id of utxo
   index: 0, // index of utxo in transaction
   value: value, // value of utxo(unit is bitcoin)
 } as bitcoin.UTXO);
@@ -144,6 +146,7 @@ const txToBroadcast: string = await tx.getSignedHex();
 
 ## Advanced feature
 ### Custom smart contract
+You might use tapscript for this!
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -159,7 +162,7 @@ const HTLC = bitcoin.Opcode.OP_IF +
         pubkey2 +
         bitcoin.Opcode.OP_ENDIF +
         bitcoin.Opcode.OP_CHECKSIG
-// p2sh address, custom contract address must be p2sh(p2wsh)
+// p2sh address, custom contract address must be p2sh(p2wsh) (or taproot address, check next chapter!)
 const toAddress = await bitcoin.address.generateScriptAddress(HTLC);
 
 // Then, can be spent as an input by signing by scriptSig!
@@ -176,9 +179,9 @@ await tx.signInputByScriptSig(
         ),
         privkey1, // signer private key
       ),
-      '01', // execute OP_IF(if legacy(not segwit), OP_1 instead of '01') 
+      '01', // execute OP_IF(if legacy(not segwit), OP_1 instead of '01')
+      HTLC, // redeem script as p2sh
     ],
-    HTLC, // redeem script as p2sh
     0, // input index
   );
 // Or spend by executing OP_ELSE branch
@@ -194,14 +197,114 @@ await tx.signInputByScriptSig(
         privkey2, // signer private key
       ),
       'abcdef', // unlock hash
-      '', // execute OP_ELSE 
+      '', // execute OP_ELSE
+      HTLC, // redeem script as p2sh
     ],
-    HTLC, // redeem script as p2sh
     0, // input index
   );
 
+// You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
+const txToBroadcast: string = await tx.getSignedHex();
 
 ```
+
+### Taproot and Tapscript spend
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js';
+
+// Let's send and spend above HTLC in taproot and tapscript way!
+/*
+  Schnorr key is same with any bitcoin key pair, except it does not use public key prefix byte '02' or '03'.
+  This key pair will be used as a master key to spend UTXO in taproot, after tweaked(will explain how to step by step).
+*/
+const schnorrPubkey = (await bitcoin.wallet.generateKeyPair()).publicKey.slice(2); // remove first byte (which is parity bit)
+const schnorrPrivkey = (await bitcoin.wallet.generateKeyPair()).privateKey;
+
+/*
+  HTLC consists of conditional branch, in which OP_IF contains Time Lock Contract and OP_ELSE contains Hash Lock.
+  We can construct tapscript tree where each leaf has its own contract(script), enable unlimited spending branches.
+*/
+// Originally OP_IF branch Time Lock Contract
+const timeLockContract =
+    (await bitcoin.script.generateTimeLockScript(2576085)) +
+    (await bitcoin.data.pushData(schnorrPubkey1) + // must specify data to read(if not opcode)
+    schnorrPubkey1 + // you must use schnorr key even in tapscript
+    bitcoin.Opcode.OP_CHECKSIG;
+// Originally OP_ELSE branch Hash Lock Contract
+const hashLockContract =
+    (await bitcoin.script.generateHashLockScript('abcdef')) +
+    (await bitcoin.data.pushData(schnorrPubkey2) + // must specify data to read(if not opcode)
+    schnorrPubkey2 + // you must use schnorr key even in tapscript
+    bitcoin.Opcode.OP_CHECKSIG;
+
+/*
+  You can get tapbranch from a pair of script, and repeat over to reach to the root of tree(which is 'taproot') 
+  Here we have only a single pair of script, so tapbranch of it is taproot
+*/
+const taproot = await bitcoin.tapscript.getTapBranch([
+    await bitcoin.tapscript.getTapLeaf(timeLockContract),
+    await bitcoin.tapscript.getTapLeaf(hashLockContract),
+]);
+// Then, get taptweak with schnorr key generated above
+const tapTweak = await bitcoin.tapscript.getTapTweak(
+    schnorrPubkey,
+    taproot,
+);
+// Finally, you can tweak schnorr public key, which can be used as taproot key!
+const tapTweakedPubkey = await bitcoin.tapscript.getTapTweakedPubkey(
+    schnorrPubkey,
+    tapTweak,
+);
+// generate taproot address with taproot key(and send to it!)
+const toAddress = await bitcoin.address.generateAddress(tapTweakedPubkey.tweakedPubKey, 'taproot');
+
+
+
+// Then, can be spent as an input!
+// one thing to keep in mind, taproot or tapscript spend needs to provide all the script public key of input
+await tx.addInput({
+    txHash: txId,
+    index: 0,
+    value: value,
+    script: await bitcoin.script.getScriptByAddress(toAddress),
+});
+
+await tx.setLocktime(2576085); // if transaction use timelock input, must set tx locktime bigger than input timelock
+
+// taproot spend? just sign input with tweaked schnorr key(which is, taproot private key)
+await tx.signInput(
+    '', // we don't need to provide taproot public key when sign
+    await bitcoin.tapscript.getTapTweakedPrivkey(schnorrPrivkey, tapTweak), // just provide private key
+    0,
+    'taproot',
+);
+
+// Or tapscript spend? Let's spend by hash lock script!
+const sigStack = [
+    await bitcoin.crypto.sign(
+      await tx.getInputHashToSign(hashLockContract, 0, 'tapscript'),
+      schnorrPrivkey2,
+      'schnorr',
+    ), // schnorr signature
+    'abcdef', // hash to unlock
+    hashLockContract, // spend script
+    // you must specify path to find taproot with provided script(For more detail, check BIP341!)
+    await bitcoin.tapscript.getTapControlBlock(
+      schnorrPubkey,
+      tapTweakedPubkey.parityBit,
+      await bitcoin.tapscript.getTapLeaf(timeLockContract), // path to find taproot
+    ),
+];
+
+await tx.signInputByScriptSig(sigStack, 0);
+
+// You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
+const txToBroadcast: string = await tx.getSignedHex();
+
+```
+
+
 
 
 ## 📜 License
