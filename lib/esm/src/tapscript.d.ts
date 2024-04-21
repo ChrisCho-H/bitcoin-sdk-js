@@ -9,4 +9,4 @@ export declare const getTapTag: (tapTagBytes: Uint8Array) => Promise<Uint8Array>
 export declare const getTapTweakedPubkey: (schnorrPubkey: string, tapTweak: Uint8Array) => Promise<TapTweakedPubkey>;
 export declare const getTapTweakedPrivkey: (schnorrPrivkey: string, tapTweak: Uint8Array) => Promise<string>;
 export declare const getTapSigHash: (sigMsg: Uint8Array) => Promise<Uint8Array>;
-export declare const getTapControlBlock: (schnorrPubkey: string, tapLeaf: Uint8Array, tweakedPubKeyParityBit: '02' | '03', tapLeafVersion?: number) => Promise<string>;
+export declare const getTapControlBlock: (schnorrPubkey: string, tweakedPubKeyParityBit: '02' | '03', tapTreePath: Uint8Array, tapLeafVersion?: number) => Promise<string>;

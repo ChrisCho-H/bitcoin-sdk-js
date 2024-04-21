@@ -135,12 +135,12 @@ export const getTapSigHash = async (
 
 export const getTapControlBlock = async (
   schnorrPubkey: string,
-  tapLeaf: Uint8Array,
   tweakedPubKeyParityBit: '02' | '03',
+  tapTreePath: Uint8Array,
   tapLeafVersion = 0xc0,
 ): Promise<string> => {
   tapLeafVersion += tweakedPubKeyParityBit === '02' ? 0x00 : 0x01;
   return (
-    tapLeafVersion.toString(16) + schnorrPubkey + (await bytesToHex(tapLeaf))
+    tapLeafVersion.toString(16) + schnorrPubkey + (await bytesToHex(tapTreePath))
   );
 };
