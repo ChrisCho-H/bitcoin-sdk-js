@@ -43,8 +43,10 @@ export const generateScriptAddress = async (
   type: 'legacy' | 'segwit' = 'segwit',
   network: 'mainnet' | 'testnet' = 'mainnet',
 ): Promise<string> => {
-  if (script.length > 1040)
-    throw new Error('Redeem script must be less than 520 bytes');
+  if (script.length > 1040 && type === 'legacy')
+    throw new Error('Redeem script must be equal or less than 520 bytes');
+  if (script.length > 7200 && type === 'segwit')
+    throw new Error('Witness script must be equal or less than 3,600 bytes');
 
   const scriptHash: Uint8Array =
     type === 'segwit'

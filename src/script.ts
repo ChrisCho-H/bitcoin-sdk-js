@@ -4,7 +4,7 @@ import { bech32, bech32m } from 'bech32';
 import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './data.js';
-import { reverseHex } from './encode.js';
+import { padZeroHexN, reverseHex } from './encode.js';
 
 export const getScriptByAddress = async (address: string): Promise<string> => {
   if (address.slice(0, 4) === 'bc1q' || address.slice(0, 4) === 'tb1q') {
@@ -49,9 +49,9 @@ export const generateScriptHash = async (
   type: 'legacy' | 'segwit' = 'segwit',
 ): Promise<string> => {
   if (script.length > 1040 && type === 'legacy')
-    throw new Error('Redeem script must be less than 520 bytes');
-  if (script.length > 20000 && type === 'segwit')
-    throw new Error('Witness script must be less than 10,000 bytes');
+    throw new Error('Redeem script must be equal or less than 520 bytes');
+  if (script.length > 7200 && type === 'segwit')
+    throw new Error('Witness script must be equal or less than 3,600 bytes');
   const scriptByte: Uint8Array = hexToBytes(script);
   const scriptHash: Uint8Array =
     type === 'segwit'
@@ -85,23 +85,54 @@ export const generateSingleSigScript = async (
 export const generateMultiSigScript = async (
   privkeyCount: number,
   pubkeys: string[],
+  type: 'segwit' | 'taproot' = 'segwit',
 ): Promise<string> => {
-  if (privkeyCount > 15 || pubkeys.length > 15)
-    throw new Error('Maximum number of keys is 15');
+  let multiSigScript: string = '';
+  if (type === 'segwit') {
+    if (privkeyCount > 15 || pubkeys.length > 15)
+      throw new Error('Maximum number of keys is 15');
 
-  const pubkeyJoin: string =
-    '21' + // first pubkey bytes to read
-    pubkeys.join('21'); // other pubkey and bytes to read
-  if (pubkeyJoin.length / pubkeys.length !== 68)
-    throw new Error('pubkey must be compressed 33 bytes');
+    const pubkeyJoin: string =
+      '21' + // first pubkey bytes to read
+      pubkeys.join('21'); // other pubkey and bytes to read
+    if (pubkeyJoin.length / pubkeys.length !== 68)
+      throw new Error('pubkey must be compressed 33 bytes');
 
-  // multi sig type of p2sh script
-  const p2sh: string =
-    (0x50 + privkeyCount).toString(16) + // m signatures(OP_M)
-    pubkeyJoin +
-    (0x50 + pubkeys.length).toString(16) + // n pubkeys(OP_N)
-    Opcode.OP_CHECKMULTISIG;
-  return p2sh;
+    // multi sig type of p2sh script
+    multiSigScript +=
+      (0x50 + privkeyCount).toString(16) + // m signatures(OP_M)
+      pubkeyJoin +
+      (0x50 + pubkeys.length).toString(16) + // n pubkeys(OP_N)
+      Opcode.OP_CHECKMULTISIG;
+  } else if (type === 'taproot') {
+    if (privkeyCount > 999 || pubkeys.length > 999)
+      throw new Error('Maximum number of keys is 999');
+
+    pubkeys.forEach((v, i) => {
+      if (v.length !== 64)
+        throw new Error('pubkey must be compressed 32 bytes');
+      multiSigScript +=
+        '20' + // pubkey bytes to read(schnorr)
+        v +
+        (i === 0 ? Opcode.OP_CHECKSIG : Opcode.OP_CHECKSIGADD);
+    }); // OP_CHECKSIGADD enabled for tapscript bip342
+
+    // get priv count in hex
+    let privkeyCountHex: string = privkeyCount.toString(16);
+    privkeyCountHex = await padZeroHexN(
+      privkeyCountHex,
+      privkeyCountHex.length < 3 ? 2 : 4,
+    );
+
+    // multi sig type of tapscript(OP_CHECKSIGADD)
+    multiSigScript +=
+      (await pushData(privkeyCountHex)) +
+      privkeyCountHex +
+      Opcode.OP_GREATERTHANOREQUAL;
+  } else {
+    throw new Error('type must be either segwit or taproot');
+  }
+  return multiSigScript;
 };
 
 export const generateTimeLockScript = async (
