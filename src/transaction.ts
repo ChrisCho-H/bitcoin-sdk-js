@@ -300,7 +300,7 @@ export class Transaction {
   public getId = async (): Promise<string> => {
     // little endian of double sha256 serialized tx
     return bytesToHex(
-      (await hash256(hexToBytes(await this.getSignedHex()))).reverse(),
+      (await hash256(hexToBytes(await this._getSignedHexLegacy()))).reverse(),
     );
   };
 
@@ -762,5 +762,32 @@ export class Transaction {
     // if already finalized, at least one input is signed
     if (this._outputScript.size !== 0)
       throw new Error(`Cannot ${taskMsg} after any of input is signed`);
+  };
+
+  // signed tx except witness(to calculate txid)
+  private _getSignedHexLegacy = async (): Promise<string> => {
+    // input count in varInt
+    const inputCount: string = await getVarInt(this._inputs.length);
+    let inputScript: string = inputCount;
+    for (let i = 0; i < this._inputs.length; i++) {
+      const inputScriptSingle: InputScript = this._inputScript.get(
+        i,
+      ) as InputScript;
+      inputScript +=
+        inputScriptSingle.txHash +
+        inputScriptSingle.index +
+        inputScriptSingle.scriptSig +
+        inputScriptSingle.sequence;
+    }
+    const outputCount: string = await getVarInt(this._outputs.length);
+    let outputScript: string = outputCount;
+    for (let i: number = 0; i < this._outputs.length; i++) {
+      const outputScriptSingle: OutputScript = this._outputScript.get(
+        i,
+      ) as OutputScript;
+      outputScript +=
+        outputScriptSingle.value + outputScriptSingle.scriptPubKey;
+    }
+    return this._version + inputScript + outputScript + this._locktime;
   };
 }

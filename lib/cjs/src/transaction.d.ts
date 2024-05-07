@@ -52,4 +52,5 @@ export declare class Transaction {
     private _setWitnessScriptSig;
     private _getWitnessItemCount;
     private _isSignedCheck;
+    private _getSignedHexLegacy;
 }
