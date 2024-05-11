@@ -28,6 +28,7 @@ export declare class Transaction {
     constructor();
     addInput: (utxo: UTXO) => Promise<void>;
     addOutput: (target: Target) => Promise<void>;
+    finalize: (type?: 'legacy' | 'segwit' | 'taproot') => Promise<void>;
     signAll: (pubkey: string, privkey: string, type?: 'legacy' | 'segwit' | 'taproot', timeLockScript?: string, secretHex?: string, sigHashType?: string) => Promise<void>;
     signInput: (pubkey: string, privkey: string, index: number, type?: 'legacy' | 'segwit' | 'taproot', timeLockScript?: string, secretHex?: string, sigHashType?: string) => Promise<void>;
     multiSignInput: (pubkey: string[], privkey: string[], index: number, type?: 'legacy' | 'segwit', timeLockScript?: string, secretHex?: string, sigHashType?: string) => Promise<void>;
@@ -37,6 +38,7 @@ export declare class Transaction {
     signInputByScriptSig: (sigStack: string[], index: number, type?: 'legacy' | 'segwit' | 'tapscript') => Promise<void>;
     getId: () => Promise<string>;
     setLocktime: (block: number) => Promise<void>;
+    setVersion: (version: number) => Promise<void>;
     disableRBF: () => Promise<void>;
     disableLocktime: () => Promise<void>;
     isSegWit: () => Promise<boolean>;
@@ -49,8 +51,11 @@ export declare class Transaction {
     private _getHashToSign;
     private _getScriptCodeIdx;
     private _setInputScriptSig;
-    private _setWitnessScriptSig;
+    private _setWitnessScript;
     private _getWitnessItemCount;
     private _isSignedCheck;
     private _getSignedHexLegacy;
+    private _validateInput;
+    private _validateOutput;
+    private _validateInputRange;
 }

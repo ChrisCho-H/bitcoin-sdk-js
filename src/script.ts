@@ -5,6 +5,7 @@ import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './data.js';
 import { padZeroHexN, reverseHex } from './encode.js';
+import { Validator } from './validator.js';
 
 export const getScriptByAddress = async (address: string): Promise<string> => {
   if (address.slice(0, 4) === 'bc1q' || address.slice(0, 4) === 'tb1q') {
@@ -48,10 +49,8 @@ export const generateScriptHash = async (
   script: string,
   type: 'legacy' | 'segwit' = 'segwit',
 ): Promise<string> => {
-  if (script.length > 1040 && type === 'legacy')
-    throw new Error('Redeem script must be equal or less than 520 bytes');
-  if (script.length > 7200 && type === 'segwit')
-    throw new Error('Witness script must be equal or less than 3,600 bytes');
+  await Validator.validateRedeemScript(script);
+
   const scriptByte: Uint8Array = hexToBytes(script);
   const scriptHash: Uint8Array =
     type === 'segwit'
@@ -64,13 +63,12 @@ export const generateSingleSigScript = async (
   pubkey: string,
   type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
 ): Promise<string> => {
-  if (type !== 'taproot' && pubkey.length !== 66)
-    throw new Error('pubkey must be compressed 33 bytes');
   if (type === 'taproot') {
-    if (pubkey.length !== 64)
-      throw new Error('schnorr pubkey must be tweaked 32 bytes');
+    await Validator.validateKeyPair(pubkey, '', 'schnorr');
     return (await pushData(pubkey)) + pubkey + Opcode.OP_CHECKSIG;
   }
+
+  await Validator.validateKeyPair(pubkey, '', 'ecdsa');
   const pubkeyHash: string = bytesToHex(await hash160(hexToBytes(pubkey)));
   return (
     Opcode.OP_DUP +
@@ -85,10 +83,10 @@ export const generateSingleSigScript = async (
 export const generateMultiSigScript = async (
   privkeyCount: number,
   pubkeys: string[],
-  type: 'segwit' | 'taproot' = 'segwit',
+  type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
 ): Promise<string> => {
   let multiSigScript: string = '';
-  if (type === 'segwit') {
+  if (type !== 'taproot') {
     if (privkeyCount > 15 || pubkeys.length > 15)
       throw new Error('Maximum number of keys is 15');
 
@@ -104,7 +102,7 @@ export const generateMultiSigScript = async (
       pubkeyJoin +
       (0x50 + pubkeys.length).toString(16) + // n pubkeys(OP_N)
       Opcode.OP_CHECKMULTISIG;
-  } else if (type === 'taproot') {
+  } else {
     if (privkeyCount > 999 || pubkeys.length > 999)
       throw new Error('Maximum number of keys is 999');
 
@@ -129,8 +127,6 @@ export const generateMultiSigScript = async (
       (await pushData(privkeyCountHex)) +
       privkeyCountHex +
       Opcode.OP_GREATERTHANOREQUAL;
-  } else {
-    throw new Error('type must be either segwit or taproot');
   }
   return multiSigScript;
 };
@@ -138,7 +134,7 @@ export const generateMultiSigScript = async (
 export const generateTimeLockScript = async (
   block: number,
 ): Promise<string> => {
-  if (block >= 500000000) throw new Error('Block height must be < 500,000,000');
+  await Validator.validateBlockLock(block);
 
   let locktime: string = block.toString(16);
   locktime.length % 2 !== 0 ? (locktime = '0' + locktime) : '';
@@ -156,8 +152,7 @@ export const generateHashLockScript = async (
 ): Promise<string> => {
   // if not even, pad 0 at last
   secretHex.length % 2 !== 0 ? (secretHex += '0') : '';
-  if (secretHex.length > 3200)
-    throw new Error('script sig must be less than 1650 bytes');
+  await Validator.validateScriptSig(secretHex);
 
   return (
     Opcode.OP_HASH256 +

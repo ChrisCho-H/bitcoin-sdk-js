@@ -1,26 +1,45 @@
 import { padZeroHexN, reverseHex } from './encode.js';
 import { Opcode } from './opcode.js';
+import { Validator } from './validator.js';
 
-export const getVarInt = async (int: number): Promise<string> => {
-  if (int <= 252) {
-    return await padZeroHexN(int.toString(16), 2);
-  } else if (int <= 65535) {
-    return 'fd' + (await reverseHex(await padZeroHexN(int.toString(16), 4)));
-  } else if (int <= 4294967295) {
-    return 'fe' + (await reverseHex(await padZeroHexN(int.toString(16), 8)));
+export const getVarInt = async (num: number): Promise<string> => {
+  await Validator.validateUint64(num);
+
+  if (num <= 252) {
+    return await padZeroHexN(num.toString(16), 2);
+  } else if (num <= 65535) {
+    return 'fd' + (await reverseHex(await padZeroHexN(num.toString(16), 4)));
+  } else if (num <= 4294967295) {
+    return 'fe' + (await reverseHex(await padZeroHexN(num.toString(16), 8)));
   } else {
-    return 'ff' + (await reverseHex(await padZeroHexN(int.toString(16), 16)));
+    return 'ff' + (await reverseHex(await padZeroHexN(num.toString(16), 16)));
   }
 };
 
-export const pushData = async (dataToRead: string): Promise<string> => {
-  return dataToRead.length / 2 < 76
-    ? await padZeroHexN((dataToRead.length / 2).toString(16), 2)
-    : dataToRead.length / 2 < 256
+export const pushData = async (data: string): Promise<string> => {
+  await Validator.validateMinimalPush(data);
+
+  return data.length / 2 < 76
+    ? await padZeroHexN((data.length / 2).toString(16), 2)
+    : data.length / 2 < 256
     ? Opcode.OP_PUSHDATA1 +
-      (await padZeroHexN((dataToRead.length / 2).toString(16), 2))
+      (await padZeroHexN((data.length / 2).toString(16), 2))
     : Opcode.OP_PUSHDATA2 +
-      (await reverseHex(
-        await padZeroHexN((dataToRead.length / 2).toString(16), 4),
-      ));
+      (await reverseHex(await padZeroHexN((data.length / 2).toString(16), 4)));
+};
+
+export const varIntToNumber = async (varInt: string): Promise<number> => {
+  if (varInt.length === 2) {
+    return Number('0x' + varInt);
+  } else {
+    return Number('0x' + varInt.slice(2));
+  }
+};
+
+export const pushDataToNumber = async (pushData: string): Promise<number> => {
+  if (pushData.length === 2) {
+    return Number('0x' + pushData);
+  } else {
+    return Number('0x' + pushData.slice(2));
+  }
 };

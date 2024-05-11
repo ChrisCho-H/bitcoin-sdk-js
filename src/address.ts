@@ -2,16 +2,18 @@ import { hexToBytes } from '@noble/hashes/utils';
 import bs58 from 'bs58';
 import { hash160, hash256, sha256 } from './crypto.js';
 import { bech32, bech32m } from 'bech32';
+import { Validator } from './validator.js';
 
 export const generateAddress = async (
   pubkey: string,
   type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
   network: 'mainnet' | 'testnet' = 'mainnet',
 ): Promise<string> => {
-  if (pubkey.length !== 66 && type !== 'taproot')
-    throw new Error('pubkey must be compressed 33 bytes');
-  if (pubkey.length !== 64 && type === 'taproot')
-    throw new Error('tap tweaked pubkey must be compressed 32 bytes');
+  await Validator.validateKeyPair(
+    pubkey,
+    '',
+    type === 'taproot' ? 'schnorr' : 'ecdsa',
+  );
 
   if (type === 'taproot') {
     const words: number[] = bech32m.toWords(hexToBytes(pubkey));
@@ -43,10 +45,7 @@ export const generateScriptAddress = async (
   type: 'legacy' | 'segwit' = 'segwit',
   network: 'mainnet' | 'testnet' = 'mainnet',
 ): Promise<string> => {
-  if (script.length > 1040 && type === 'legacy')
-    throw new Error('Redeem script must be equal or less than 520 bytes');
-  if (script.length > 7200 && type === 'segwit')
-    throw new Error('Witness script must be equal or less than 3,600 bytes');
+  await Validator.validateRedeemScript(script);
 
   const scriptHash: Uint8Array =
     type === 'segwit'

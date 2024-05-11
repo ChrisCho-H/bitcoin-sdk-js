@@ -2,6 +2,7 @@ import { ripemd160 as _ripemd160 } from '@noble/hashes/ripemd160';
 import { sha256 as _sha256 } from '@noble/hashes/sha256';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { bytesToHex } from './encode.js';
+import { Validator } from './validator.js';
 
 export const hash160 = async (hex: Uint8Array): Promise<Uint8Array> => {
   return await ripemd160(await sha256(hex));
@@ -25,6 +26,9 @@ export const sign = async (
   type: 'ecdsa' | 'schnorr' = 'ecdsa',
   sigHashType = '01000000',
 ): Promise<string> => {
+  // for validation
+  await Validator.validateKeyPair('', privkey, type);
+
   // convert to sighash default for schnorr taproot if input is sighash all
   if (sigHashType === '01000000' && type === 'schnorr') sigHashType = '';
   return (
@@ -33,4 +37,22 @@ export const sign = async (
       : await bytesToHex(schnorr.sign(msgHash, privkey))) +
     sigHashType.slice(0, 2)
   );
+};
+
+export const verify = async (
+  signature: string,
+  msgHash: Uint8Array,
+  pubkey: string,
+  type: 'ecdsa' | 'schnorr' = 'ecdsa',
+  sigHashType = '01000000',
+): Promise<boolean> => {
+  // for validation
+  await Validator.validateKeyPair(pubkey, '', type);
+
+  // convert to sighash default for schnorr taproot if input is sighash all
+  if (!(sigHashType === '01000000' && type === 'schnorr'))
+    signature = signature.slice(0, -2);
+  return type === 'ecdsa'
+    ? secp256k1.verify(signature, msgHash, pubkey)
+    : schnorr.verify(signature, msgHash, pubkey);
 };

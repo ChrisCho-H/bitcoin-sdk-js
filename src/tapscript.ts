@@ -2,6 +2,7 @@ import { sha256 } from './crypto.js';
 import { getVarInt } from './data.js';
 import { bytesToHex, hexToBytes } from './encode.js';
 import { secp256k1, schnorr } from '@noble/curves/secp256k1';
+import { Validator } from './validator.js';
 
 const tapLeafTagBytes: Uint8Array = new Uint8Array([
   84, 97, 112, 76, 101, 97, 102,
@@ -65,9 +66,8 @@ export const getTapTweak = async (
   schnorrPubkey: string,
   taproot: Uint8Array,
 ): Promise<Uint8Array> => {
-  if (schnorrPubkey.length !== 64)
-    throw new Error('Schnorr public key length must be 32 bytes hex');
-  if (taproot.length !== 32) throw new Error('TapRoot must be 32 bytes hex');
+  await Validator.validateKeyPair(schnorrPubkey, '', 'schnorr');
+  if (taproot.length !== 32) throw new Error('TapRoot must be 32 bytes');
 
   return await sha256(
     new Uint8Array([
@@ -89,6 +89,8 @@ export const getTapTweakedPubkey = async (
   schnorrPubkey: string,
   tapTweak: Uint8Array,
 ): Promise<TapTweakedPubkey> => {
+  await Validator.validateKeyPair(schnorrPubkey, '', 'schnorr');
+
   const P = schnorr.utils.lift_x(
     schnorr.utils.bytesToNumberBE(await hexToBytes(schnorrPubkey)),
   );
@@ -105,6 +107,8 @@ export const getTapTweakedPrivkey = async (
   schnorrPrivkey: string,
   tapTweak: Uint8Array,
 ): Promise<string> => {
+  await Validator.validateKeyPair('', schnorrPrivkey, 'schnorr');
+
   const normal = secp256k1.utils.normPrivateKeyToScalar;
 
   const P = secp256k1.ProjectivePoint.fromPrivateKey(
@@ -139,8 +143,12 @@ export const getTapControlBlock = async (
   tapTreePath: Uint8Array,
   tapLeafVersion = 0xc0,
 ): Promise<string> => {
+  await Validator.validateKeyPair(schnorrPubkey, '', 'schnorr');
+
   tapLeafVersion += tweakedPubKeyParityBit === '02' ? 0x00 : 0x01;
   return (
-    tapLeafVersion.toString(16) + schnorrPubkey + (await bytesToHex(tapTreePath))
+    tapLeafVersion.toString(16) +
+    schnorrPubkey +
+    (await bytesToHex(tapTreePath))
   );
 };

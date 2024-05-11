@@ -10,11 +10,12 @@ import {
   getScriptByAddress,
 } from './script.js';
 import { getTapLeaf, getTapSigHash } from './tapscript.js';
+import { Validator } from './validator.js';
 
 export interface UTXO {
   txHash: string;
   index: number;
-  value: number; // required in segWit
+  value: number; // required in segwit
   script?: string; // required in taproot
   sequence?: string; // default to 'fdffffff'
 }
@@ -67,16 +68,20 @@ export class Transaction {
 
   public addInput = async (utxo: UTXO): Promise<void> => {
     await this._isSignedCheck('add input');
+    await this._validateInput(utxo);
     this._inputs.push(utxo);
   };
 
   public addOutput = async (target: Target): Promise<void> => {
     await this._isSignedCheck('add output');
-    if (!target.address && !target.script)
-      throw new Error('Either address or script must be given for output');
-    if (target.script && target.script.length > 20000)
-      throw new Error('Output script must be less than 10k bytes');
+    await this._validateOutput(target);
     this._outputs.push(target);
+  };
+
+  public finalize = async (
+    type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
+  ): Promise<void> => {
+    await this._finalize(type);
   };
 
   public signAll = async (
@@ -87,10 +92,13 @@ export class Transaction {
     secretHex = '',
     sigHashType = '01000000',
   ): Promise<void> => {
-    if (type !== 'taproot' && pubkey.length !== 66)
-      throw new Error('pubkey must be compressed 33 bytes');
-    if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
+    await Validator.validateKeyPair(
+      pubkey,
+      privkey,
+      type === 'taproot' ? 'schnorr' : 'ecdsa',
+    );
 
+    await this._finalize(type);
     // asynchronously sign all as index determined
     const promiseList: Promise<void>[] = [];
     for (let i = 0; i < this._inputs.length; i++) {
@@ -118,15 +126,18 @@ export class Transaction {
     secretHex = '',
     sigHashType = '01000000',
   ): Promise<void> => {
-    if (type !== 'taproot' && pubkey.length !== 66)
-      throw new Error('pubkey must be compressed 33 bytes');
-    if (privkey.length !== 64) throw new Error('privkey must be 32 bytes');
+    await this._validateInputRange(index);
+    await Validator.validateKeyPair(
+      pubkey,
+      privkey,
+      type === 'taproot' ? 'schnorr' : 'ecdsa',
+    );
 
-    const unsignedTx = await this._finalize();
+    await this._finalize(type);
     await this._sign(
       [pubkey],
       [privkey],
-      unsignedTx,
+      this._unsignedTx,
       index,
       false,
       timeLockScript,
@@ -145,11 +156,14 @@ export class Transaction {
     secretHex = '',
     sigHashType = '01000000',
   ): Promise<void> => {
-    const unsignedTx = await this._finalize();
+    await this._validateInputRange(index);
+    await Validator.validateKeyPairBatch(pubkey, privkey, 'ecdsa');
+
+    await this._finalize(type);
     await this._sign(
       pubkey,
       privkey,
-      unsignedTx,
+      this._unsignedTx,
       index,
       true,
       timeLockScript,
@@ -165,30 +179,27 @@ export class Transaction {
     type: 'legacy' | 'segwit' = 'segwit',
     timeLockScript = '',
   ): Promise<void> => {
-    if (index > this._inputs.length - 1)
-      throw new Error(
-        `Out of range, tx contains only ${this._inputs.length} inputs`,
-      );
-    await this._finalize();
+    await this._validateInputRange(index);
+    await this._finalize(type);
     // if not even, pad 0 at last
     secretHex.length % 2 !== 0 ? (secretHex += '0') : '';
     // script sig including secret and hash lock script
     const redeemScript =
       timeLockScript + (await generateHashLockScript(secretHex));
-    const isSegWit = type === 'segwit' ? true : false;
+    const isSegwit = type === 'segwit' ? true : false;
     const scriptSig: string =
       '01' +
       Opcode.OP_1 + // as op_equalverify is used, trick to avoid clean stack err
-      (isSegWit
+      (isSegwit
         ? await getVarInt(secretHex.length / 2)
         : await pushData(secretHex)) +
       secretHex +
-      (isSegWit
+      (isSegwit
         ? await getVarInt(redeemScript.length / 2)
         : await pushData(redeemScript)) +
       redeemScript;
-    isSegWit
-      ? await this._setWitnessScriptSig(
+    isSegwit
+      ? await this._setWitnessScript(
           index,
           scriptSig,
           await this._getWitnessItemCount(
@@ -203,7 +214,7 @@ export class Transaction {
   };
 
   public getSignedHex = async (): Promise<string> => {
-    const isSegWit: boolean = await this.isSegWit();
+    const isSegwit: boolean = await this.isSegWit();
     // signed tx except witness and locktime
     // add witness field if exists
     let witness: string = '';
@@ -233,7 +244,7 @@ export class Transaction {
     }
     return (
       this._version +
-      (isSegWit ? this._segWitMarker + this._segWitFlag : '') +
+      (isSegwit ? this._segWitMarker + this._segWitFlag : '') +
       inputScript +
       outputScript +
       (witness.length === this._inputs.length * 2 ? '' : witness) +
@@ -249,7 +260,11 @@ export class Transaction {
     sigHashType = '01000000',
     keyVersion = '00',
   ): Promise<Uint8Array> => {
-    const unsignedTx = await this._finalize();
+    await this._validateInputRange(index);
+    if (type === 'legacy' || type === 'segwit')
+      await Validator.validateRedeemScript(redeemScript);
+
+    await this._finalize(type);
     // op_pushdata and length in hex
     const scriptCodeLength: string =
       type === 'segwit'
@@ -264,7 +279,7 @@ export class Transaction {
         : scriptCodeLength.slice(2) + redeemScript;
 
     return await this._getHashToSign(
-      unsignedTx,
+      this._unsignedTx,
       index,
       scriptCode,
       type,
@@ -278,21 +293,40 @@ export class Transaction {
     index: number,
     type: 'legacy' | 'segwit' | 'tapscript' = 'segwit',
   ): Promise<void> => {
+    await this._validateInputRange(index);
+
+    await this._finalize(type);
     if (type === 'segwit' || type === 'tapscript') {
       // witness stack item count (including redeem script)
       const witnessCount = await getVarInt(sigStack.length);
-      let scriptSig = '';
+      let witnessScript = '';
       // encode bytes to read each witness item
       for (let i = 0; i < sigStack.length; i++) {
-        scriptSig += (await getVarInt(sigStack[i].length / 2)) + sigStack[i];
+        // check witness stack item size
+        if (type === 'segwit') await Validator.validateWitnessItem(sigStack[i]);
+        witnessScript +=
+          (await getVarInt(sigStack[i].length / 2)) + sigStack[i];
       }
-      await this._setWitnessScriptSig(index, scriptSig, witnessCount);
+      // check witness script size
+      if (type === 'segwit')
+        await Validator.validateWitnessScript(witnessScript);
+
+      await this._setWitnessScript(index, witnessScript, witnessCount);
     } else {
-      let scriptSig = '';
+      let scriptSig: string = '';
       // encode bytes to read each sig item
-      for (let i = 0; i < sigStack.length; i++) {
+      for (let i = 0; i < sigStack.length - 1; i++) {
         scriptSig += (await pushData(sigStack[i])) + sigStack[i];
       }
+
+      // check script sig size
+      await Validator.validateScriptSig(scriptSig);
+      // check redeem script size
+      const redeemScript: string = sigStack[sigStack.length - 1];
+      await Validator.validateRedeemScript(redeemScript);
+
+      scriptSig += (await pushData(redeemScript)) + redeemScript;
+
       await this._setInputScriptSig(index, scriptSig);
     }
   };
@@ -307,7 +341,16 @@ export class Transaction {
   // must be set >= any of timelock input block height
   public setLocktime = async (block: number): Promise<void> => {
     await this._isSignedCheck('set locktime');
+    await Validator.validateBlockLock(block);
+
     this._locktime = await reverseHex(await padZeroHexN(block.toString(16), 8));
+  };
+
+  public setVersion = async (version: number): Promise<void> => {
+    await this._isSignedCheck('set version');
+    this._version = await reverseHex(
+      await padZeroHexN(version.toString(16), 8),
+    );
   };
 
   public disableRBF = async (): Promise<void> => {
@@ -324,40 +367,40 @@ export class Transaction {
     return this._witness.size !== 0 ? true : false;
   };
 
-  private _finalize = async (): Promise<string> => {
+  private _finalize = async (
+    type: 'legacy' | 'segwit' | 'taproot' | 'tapscript',
+  ): Promise<void> => {
     // if already finalized, just return
-    if (this._unsignedTx.length !== 0) return this._unsignedTx;
-
-    await Promise.all([this._finalizeInputs(), this._finalizeOutputs()]);
-    await this._finalizeSegwit();
-
-    // input count in varInt
-    const inputCount: string = await getVarInt(this._inputs.length);
-    let inputScript: string = inputCount;
-    for (let i: number = 0; i < this._inputs.length; i++) {
-      const inputScriptSingle: InputScript = this._inputScript.get(
-        i,
-      ) as InputScript;
-      inputScript +=
-        inputScriptSingle.txHash +
-        inputScriptSingle.index +
-        inputScriptSingle.scriptSig +
-        inputScriptSingle.sequence;
+    if (this._unsignedTx.length !== 0) {
+      if (type === 'legacy') return;
+    } else {
+      await Promise.all([this._finalizeInputs(), this._finalizeOutputs()]);
+      // input count in varInt
+      const inputCount: string = await getVarInt(this._inputs.length);
+      let inputScript: string = inputCount;
+      for (let i: number = 0; i < this._inputs.length; i++) {
+        const inputScriptSingle: InputScript = this._inputScript.get(
+          i,
+        ) as InputScript;
+        inputScript +=
+          inputScriptSingle.txHash +
+          inputScriptSingle.index +
+          inputScriptSingle.scriptSig +
+          inputScriptSingle.sequence;
+      }
+      const outputCount: string = await getVarInt(this._outputs.length);
+      let outputScript: string = outputCount;
+      for (let i: number = 0; i < this._outputs.length; i++) {
+        const outputScriptSingle: OutputScript = this._outputScript.get(
+          i,
+        ) as OutputScript;
+        outputScript +=
+          outputScriptSingle.value + outputScriptSingle.scriptPubKey;
+      }
+      this._unsignedTx =
+        this._version + inputScript + outputScript + this._locktime;
     }
-    const outputCount: string = await getVarInt(this._outputs.length);
-    let outputScript: string = outputCount;
-    for (let i: number = 0; i < this._outputs.length; i++) {
-      const outputScriptSingle: OutputScript = this._outputScript.get(
-        i,
-      ) as OutputScript;
-      outputScript +=
-        outputScriptSingle.value + outputScriptSingle.scriptPubKey;
-    }
-
-    this._unsignedTx =
-      this._version + inputScript + outputScript + this._locktime;
-
-    return this._unsignedTx;
+    if (type !== 'legacy') await this._finalizeSegwit(type);
   };
 
   private _finalizeInputs = async (): Promise<void> => {
@@ -419,7 +462,11 @@ export class Transaction {
     }
   };
 
-  private _finalizeSegwit = async (): Promise<void> => {
+  private _finalizeSegwit = async (
+    type: 'segwit' | 'taproot' | 'tapscript',
+  ): Promise<void> => {
+    // if already finalized, just return
+    if (this._witnessMsgPrefix.length !== 0 && type === 'segwit') return;
     const versionByte: Uint8Array = hexToBytes(this._version);
     let outpoint = '';
     let sequence = '';
@@ -454,13 +501,15 @@ export class Transaction {
     ]);
 
     // taproot
-    await this._finalizeTaproot(
-      versionByte,
-      lockTimeByte,
-      prevHash,
-      sequenceHash,
-      outputHash,
-    );
+    // if already finalized, just return
+    if (this._taprootMsgPrefix.length === 0 && type !== 'segwit')
+      await this._finalizeTaproot(
+        versionByte,
+        lockTimeByte,
+        prevHash,
+        sequenceHash,
+        outputHash,
+      );
   };
 
   private _finalizeTaproot = async (
@@ -477,6 +526,8 @@ export class Transaction {
         i,
       ) as InputScript;
       amount += inputScriptSingle.amount;
+      if (!this._inputs[i].script)
+        throw new Error('Script is required for taproot');
       scriptPubKeyJoined +=
         (await getVarInt((this._inputs[i].script?.length as number) / 2)) +
         this._inputs[i].script;
@@ -586,8 +637,6 @@ export class Transaction {
       // multi sig for p2sh script
       let multiSig: string = Opcode.OP_0; //one extra unused value removed from the stack for OP_CHECKMULTISIG
       for (let i = 0; i < privkey.length; i++) {
-        if (privkey[i].length !== 64)
-          throw new Error('privkey must be 32 bytes');
         const signature = await sign(msgHash, privkey[i], 'ecdsa', sigHashType);
         multiSig += (signature.length / 2).toString(16) + signature;
       }
@@ -602,7 +651,7 @@ export class Transaction {
     }
 
     type !== 'legacy'
-      ? await this._setWitnessScriptSig(
+      ? await this._setWitnessScript(
           inputIdx,
           scriptSig,
           type === 'taproot'
@@ -626,11 +675,6 @@ export class Transaction {
     sigHashType = '01000000',
     keyVersion = '00',
   ): Promise<Uint8Array> => {
-    // index to insert script sig
-    if (inputIdx > this._inputs.length - 1)
-      throw new Error(
-        `Out of range, tx contains only ${this._inputs.length} inputs`,
-      );
     if (type === 'taproot' || type === 'tapscript') {
       const epoch: number = 0;
       const spendType: number = type === 'taproot' ? 0 : 1 * 2; // no annex
@@ -715,9 +759,6 @@ export class Transaction {
     inputIdx: number,
     scriptSig: string,
   ): Promise<void> => {
-    if (scriptSig.length > 3300)
-      throw new Error('script sig must be less than 1650 bytes');
-
     const finalInputScript: string =
       (await getVarInt(scriptSig.length / 2)) + scriptSig;
     // replace unsigned input into signed
@@ -728,14 +769,12 @@ export class Transaction {
     this._inputScript.set(inputIdx, unsignedInputScript);
   };
 
-  private _setWitnessScriptSig = async (
+  private _setWitnessScript = async (
     index: number,
-    witnessScriptSig: string,
+    witnessScript: string,
     itemCount: string,
   ): Promise<void> => {
-    if (witnessScriptSig.length > 20000)
-      throw new Error('witness script must be less than 10,000 bytes');
-    this._witness.set(index, itemCount + witnessScriptSig);
+    this._witness.set(index, itemCount + witnessScript);
   };
 
   private _getWitnessItemCount = async (
@@ -789,5 +828,43 @@ export class Transaction {
         outputScriptSingle.value + outputScriptSingle.scriptPubKey;
     }
     return this._version + inputScript + outputScript + this._locktime;
+  };
+  // hex is not strictly checked as will be checked when finalize, for performance
+  private _validateInput = async (input: UTXO): Promise<void> => {
+    if (
+      input.txHash.length !== 64 ||
+      !Number.isInteger(Number('0x' + input.txHash))
+    )
+      throw new Error('Input tx hash must be 32 byte hex');
+    if (
+      input.index < 0 ||
+      input.index > 0xffffffff ||
+      !Number.isInteger(input.index)
+    )
+      throw new Error('Input index must be 4 byte uint');
+    if (input.value < 0 || !Number.isFinite(input.value))
+      throw new Error('Input value must be number');
+    if (
+      input.sequence &&
+      (input.sequence.length !== 8 ||
+        !Number.isInteger(Number('0x' + input.sequence)))
+    )
+      throw new Error('Input sequence must be 4 byte hex');
+  };
+  // address is not checked as will be checked when finalize, for performance
+  private _validateOutput = async (output: Target): Promise<void> => {
+    if (!output.address && !output.script)
+      throw new Error('Either address or script must be given for output');
+    if (output.value < 0 || !Number.isFinite(output.value))
+      throw new Error('Output value must be 8 byte uint');
+    if (output.script && output.script.length > 20000)
+      throw new Error('Output script must be equal or less tan 10,000 bytes');
+  };
+  // check input range when sign
+  private _validateInputRange = async (index: number): Promise<void> => {
+    if (index > this._inputs.length - 1)
+      throw new Error(
+        `Out of range, tx contains only ${this._inputs.length} inputs`,
+      );
   };
 }
