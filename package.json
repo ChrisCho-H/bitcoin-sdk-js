@@ -23,8 +23,8 @@
   "scripts": {
     "compile": "tsc -p tsconfig.esm.json",
     "compile:cjs": "tsc -p tsconfig.cjs.json",
-    "test": "cd lib/esm && npm run test",
-    "test:cjs": "cd lib/cjs && npm run test",
+    "test": "c8 --reporter=html --reporter=text --all=true --include=lib/esm/src/*.js mocha lib/esm/test/**/*.js",
+    "test:cjs": "c8 --reporter=html --reporter=text --all=true --include=lib/cjs/src/*.js mocha lib/cjs/test/**/*.js",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path ./.eslintignore",
     "lint:fix": "eslint --fix \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path ./.eslintignore",
     "format": "prettier \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path ./.prettierignore",
