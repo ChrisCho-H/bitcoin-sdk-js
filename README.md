@@ -26,7 +26,7 @@ const tx = new bitcoin.Transaction();
 await tx.addInput({
   txHash: txId, // transaction id of utxo
   index: 0, // index of utxo in transaction
-  value: value, // value of utxo(unit is bitcoin)
+  value: value, // value of utxo(unit is satoshi)
 } as bitcoin.UTXO);
 
 // add Target output to send Bitcoin
@@ -162,7 +162,7 @@ const HTLC = bitcoin.Opcode.OP_IF +
         pubkey2 +
         bitcoin.Opcode.OP_ENDIF +
         bitcoin.Opcode.OP_CHECKSIG
-// p2sh address, custom contract address must be p2sh(p2wsh) (or taproot address, check next chapter!)
+// p2wsh address, custom contract address must be p2wsh(p2sh) (or taproot address, check next chapter!)
 const toAddress = await bitcoin.address.generateScriptAddress(HTLC);
 
 // Then, can be spent as an input by signing by scriptSig!
@@ -174,13 +174,13 @@ await tx.signInputByScriptSig(
       await bitcoin.crypto.sign(
         // method to get input message hash to sign
         await tx.getInputHashToSign(
-          HTLC, // redeem script as p2sh
+          HTLC, // redeem script as p2wsh
           0, // input index
         ),
         privkey1, // signer private key
       ),
-      '01', // execute OP_IF(if legacy(not segwit), OP_1 instead of '01')
-      HTLC, // redeem script as p2sh
+      '01', // execute OP_IF
+      HTLC, // redeem script as p2wsh
     ],
     0, // input index
   );
@@ -191,7 +191,7 @@ await tx.signInputByScriptSig(
       await bitcoin.crypto.sign(
         // method to get input message hash to sign
         await tx.getInputHashToSign(
-          HTLC, // redeem script as p2sh
+          HTLC, // redeem script as p2wsh
           0, // input index
         ),
         privkey2, // signer private key
@@ -297,7 +297,7 @@ const sigStack = [
     ),
 ];
 
-await tx.signInputByScriptSig(sigStack, 0);
+await tx.signInputByScriptSig(sigStack, 0, 'tapscript');
 
 // You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
 const txToBroadcast: string = await tx.getSignedHex();
