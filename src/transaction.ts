@@ -423,10 +423,7 @@ export class Transaction {
         : this._defaultSequence;
       // for segwit, little endian input amount list
       const amount: string = await reverseHex(
-        await padZeroHexN(
-          Math.floor((this._inputs[i].value as number) * 10 ** 8).toString(16),
-          16,
-        ),
+        await padZeroHexN((this._inputs[i].value as number).toString(16), 16),
       );
       this._inputScript.set(i, {
         txHash,
@@ -446,10 +443,7 @@ export class Transaction {
     // get output script hex
     for (let i: number = 0; i < this._outputs.length; i++) {
       const value: string = await reverseHex(
-        await padZeroHexN(
-          Math.floor(this._outputs[i].value * 10 ** 8).toString(16),
-          16,
-        ),
+        await padZeroHexN(this._outputs[i].value.toString(16), 16),
       );
       const scriptPubKey: string = this._outputs[i].address
         ? await getScriptByAddress(this._outputs[i].address as string)
@@ -712,12 +706,7 @@ export class Transaction {
       );
       const scriptCodeByte: Uint8Array = hexToBytes(scriptCode);
       const valueByte: Uint8Array = hexToBytes(
-        await padZeroHexN(
-          Math.floor(
-            (this._inputs[inputIdx].value as number) * 10 ** 8,
-          ).toString(16),
-          16,
-        ),
+        await padZeroHexN(this._inputs[inputIdx].value.toString(16), 16),
       ).reverse();
       const sequence: string = this._inputs[inputIdx].sequence
         ? (this._inputs[inputIdx].sequence as string)
@@ -842,8 +831,8 @@ export class Transaction {
       !Number.isInteger(input.index)
     )
       throw new Error('Input index must be 4 byte uint');
-    if (input.value < 0 || !Number.isFinite(input.value))
-      throw new Error('Input value must be number');
+    if (input.value < 0 || !Number.isInteger(input.value))
+      throw new Error('Input value must be 8 byte uint');
     if (
       input.sequence &&
       (input.sequence.length !== 8 ||
@@ -855,7 +844,7 @@ export class Transaction {
   private _validateOutput = async (output: Target): Promise<void> => {
     if (!output.address && !output.script)
       throw new Error('Either address or script must be given for output');
-    if (output.value < 0 || !Number.isFinite(output.value))
+    if (output.value < 0 || !Number.isInteger(output.value))
       throw new Error('Output value must be 8 byte uint');
     if (output.script && output.script.length > 20000)
       throw new Error('Output script must be equal or less tan 10,000 bytes');

@@ -30,7 +30,9 @@ export class Validator {
   ): Promise<void> => {
     // check witness script size
     if (witnessScript.length > 7200)
-      throw new Error('Witness script must be equal or less than 3,600 bytes if not taproot');
+      throw new Error(
+        'Witness script must be equal or less than 3,600 bytes if not taproot',
+      );
   };
   // validate block lock height
   public static validateBlockLock = async (block: number): Promise<void> => {
