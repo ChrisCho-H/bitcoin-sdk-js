@@ -10,7 +10,7 @@ describe('get varirable int test', () => {
     const num2 = Math.floor(Math.random() * (65535 - 253 + 1) + 253);
     const num3 = Math.floor(Math.random() * (4294967295 - 65536 + 1) + 65536);
     const num4 = Math.floor(
-      Math.random() * (Number.MAX_VALUE - 4294967296 + 1) + 4294967296,
+      Math.random() * (Number.MAX_SAFE_INTEGER - 4294967296 + 1) + 4294967296,
     );
 
     // When

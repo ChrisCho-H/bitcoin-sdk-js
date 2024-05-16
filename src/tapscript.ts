@@ -64,17 +64,17 @@ export const getTapBranch = async (
 
 export const getTapTweak = async (
   schnorrPubkey: string,
-  taproot: Uint8Array,
+  taproot?: Uint8Array,
 ): Promise<Uint8Array> => {
   await Validator.validateKeyPair(schnorrPubkey, '', 'schnorr');
-  if (taproot.length !== 32) throw new Error('TapRoot must be 32 bytes');
-
+  if (taproot && taproot.length !== 32)
+    throw new Error('TapRoot must be 32 bytes');
+  const tweakPubOnly: Uint8Array = new Uint8Array([
+    ...(await getTapTag(tapTweakTagBytes)),
+    ...(await hexToBytes(schnorrPubkey)),
+  ]);
   return await sha256(
-    new Uint8Array([
-      ...(await getTapTag(tapTweakTagBytes)),
-      ...(await hexToBytes(schnorrPubkey)),
-      ...taproot,
-    ]),
+    !taproot ? tweakPubOnly : new Uint8Array([...tweakPubOnly, ...taproot]),
   );
 };
 

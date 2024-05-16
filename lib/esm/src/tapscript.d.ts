@@ -4,7 +4,7 @@ export interface TapTweakedPubkey {
 }
 export declare const getTapLeaf: (script: string, tapLeafVersion?: number) => Promise<Uint8Array>;
 export declare const getTapBranch: (tapLeafPair: Uint8Array[]) => Promise<Uint8Array>;
-export declare const getTapTweak: (schnorrPubkey: string, taproot: Uint8Array) => Promise<Uint8Array>;
+export declare const getTapTweak: (schnorrPubkey: string, taproot?: Uint8Array) => Promise<Uint8Array>;
 export declare const getTapTag: (tapTagBytes: Uint8Array) => Promise<Uint8Array>;
 export declare const getTapTweakedPubkey: (schnorrPubkey: string, tapTweak: Uint8Array) => Promise<TapTweakedPubkey>;
 export declare const getTapTweakedPrivkey: (schnorrPrivkey: string, tapTweak: Uint8Array) => Promise<string>;
