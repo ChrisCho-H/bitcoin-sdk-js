@@ -1,6 +1,6 @@
 {
   "name": "bitcoin-sdk-js",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bitcoin Smart Contract SDK for Node, Browser and Mobile.",
   "type": "module",
   "keywords": [
@@ -13,7 +13,9 @@
     "bitcoin-ts",
     "segwit",
     "taproot",
-    "contract"
+    "contract",
+    "bip322",
+    "bitcoin-message"
   ],
   "repository": {
     "type": "git",
