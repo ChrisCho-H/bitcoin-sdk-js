@@ -93,7 +93,7 @@ describe('legacy transaction test', () => {
       value: value,
     });
     // sign input
-    await tx.signInput(keypair.publicKey, keypair.privateKey, 0, 'legacy');
+    await tx.signInput(keypair.privateKey, 0, 'legacy');
     await tx.multiSignInput(
       [keypair.publicKey, keypair.publicKey, keypair.publicKey],
       [keypair.privateKey, keypair.privateKey],
@@ -261,7 +261,7 @@ describe('segwit transaction test', () => {
     // set lock time for timelock
     await tx.setLocktime(locktime);
     // sign input
-    await tx.signInput(keypair.publicKey, keypair.privateKey, 0, 'segwit');
+    await tx.signInput(keypair.privateKey, 0, 'segwit');
     await tx.multiSignInput(
       [keypair.publicKey, keypair.publicKey, keypair.publicKey],
       [keypair.privateKey, keypair.privateKey],
@@ -387,7 +387,7 @@ describe('taproot transaction test', () => {
     // set lock time for timelock
     await tx.setLocktime(locktime);
     // sign input
-    await tx.signInput(keypair.publicKey, keypair.privateKey, 0, 'legacy');
+    await tx.signInput(keypair.privateKey, 0, 'legacy');
     await tx.multiSignInput(
       [keypair.publicKey, keypair.publicKey, keypair.publicKey],
       [keypair.privateKey, keypair.privateKey],

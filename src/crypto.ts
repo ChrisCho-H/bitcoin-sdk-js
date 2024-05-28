@@ -93,7 +93,7 @@ export const signMessage = async (
     const txToSign: Transaction = await _getVirtualTx(msg, script);
     // segwit p2wpkh and taproot p2tr use bip322 signing processs
     if (script.slice(0, 2) === Opcode.OP_0) {
-      await txToSign.signInput(pubkey, privkey, 0);
+      await txToSign.signInput(privkey, 0);
     } else if (script.slice(0, 2) === Opcode.OP_1) {
       const tapTweak: Uint8Array = await getTapTweak(pubkey.slice(2));
       const tweakedPrivKey: string = await getTapTweakedPrivkey(
@@ -101,7 +101,6 @@ export const signMessage = async (
         tapTweak,
       );
       await txToSign.signInput(
-        '',
         tweakedPrivKey,
         0,
         'taproot',

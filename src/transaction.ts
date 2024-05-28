@@ -11,6 +11,7 @@ import {
 } from './script.js';
 import { getTapLeaf, getTapSigHash } from './tapscript.js';
 import { Validator } from './validator.js';
+import { getPublicKey } from './wallet.js';
 
 export interface UTXO {
   txHash: string;
@@ -85,7 +86,6 @@ export class Transaction {
   };
 
   public signAll = async (
-    pubkey: string,
     privkey: string,
     type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
     timeLockScript = '',
@@ -93,7 +93,7 @@ export class Transaction {
     sigHashType = '01000000',
   ): Promise<void> => {
     await Validator.validateKeyPair(
-      pubkey,
+      '',
       privkey,
       type === 'taproot' ? 'schnorr' : 'ecdsa',
     );
@@ -104,7 +104,6 @@ export class Transaction {
     for (let i = 0; i < this._inputs.length; i++) {
       promiseList.push(
         this.signInput(
-          pubkey,
           privkey,
           i,
           type,
@@ -118,7 +117,6 @@ export class Transaction {
   };
 
   public signInput = async (
-    pubkey: string,
     privkey: string,
     index: number,
     type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
@@ -127,6 +125,9 @@ export class Transaction {
     sigHashType = '01000000',
   ): Promise<void> => {
     await this._validateInputRange(index);
+    const pubkeyWithParityBit: string = await getPublicKey(privkey);
+    const pubkey =
+      type === 'taproot' ? pubkeyWithParityBit.slice(2) : pubkeyWithParityBit;
     await Validator.validateKeyPair(
       pubkey,
       privkey,

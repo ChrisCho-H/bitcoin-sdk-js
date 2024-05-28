@@ -14,3 +14,7 @@ export const generateKeyPair = async (): Promise<KeyPair> => {
     privateKey: bytesToHex(privateKey),
   };
 };
+
+export const getPublicKey = async (privateKey: string): Promise<string> => {
+  return bytesToHex(secp256k1.getPublicKey(privateKey));
+};
