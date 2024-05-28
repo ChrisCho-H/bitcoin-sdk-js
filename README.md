@@ -98,7 +98,7 @@ await tx.addOutput({
 tx.setLocktime(2542622);
 
 // if input utxo only requires single sig(p2wpkh or p2pkh)
-await tx.signInput(pubkey, privkey, 0);
+await tx.signInput(privkey, 0);
 
 // or if input utxo only requires multi sig(p2wsh or p2sh)
 await tx.multiSignInput(
@@ -109,7 +109,6 @@ await tx.multiSignInput(
 
 // or if input utxo requires single sig with smart contract(p2wsh or p2sh)
 await tx.signInput(
-    pubkey,
     privkey,
     0, // input index to sign
     // below are optional, use to sign legacy utxo or unlock smart contract utxo
@@ -274,8 +273,7 @@ await tx.setLocktime(2576085); // if transaction use timelock input, must set tx
 
 // taproot spend? just sign input with tweaked schnorr key(which is, taproot private key)
 await tx.signInput(
-    '', // we don't need to provide taproot public key when sign
-    await bitcoin.tapscript.getTapTweakedPrivkey(schnorrPrivkey, tapTweak), // just provide private key
+    await bitcoin.tapscript.getTapTweakedPrivkey(schnorrPrivkey, tapTweak), // provide tweaked private key
     0,
     'taproot',
 );
