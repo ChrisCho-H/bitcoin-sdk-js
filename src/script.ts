@@ -4,7 +4,7 @@ import { bech32, bech32m } from 'bech32';
 import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './data.js';
-import { padZeroHexN, reverseHex } from './encode.js';
+import { padZeroHexN, scriptNum } from './encode.js';
 import { Validator } from './validator.js';
 
 export const getScriptByAddress = async (address: string): Promise<string> => {
@@ -136,15 +136,10 @@ export const generateTimeLockScript = async (
 ): Promise<string> => {
   await Validator.validateBlockLock(block);
 
-  let locktime: string = block.toString(16);
-  locktime.length % 2 !== 0 ? (locktime = '0' + locktime) : '';
+  const locktime: string = await scriptNum(block);
+
   const opcode: string = Opcode.OP_CHECKLOCKTIMEVERIFY;
-  return (
-    (await pushData(locktime)) +
-    (await reverseHex(locktime)) +
-    opcode +
-    Opcode.OP_DROP
-  );
+  return (await pushData(locktime)) + locktime + opcode + Opcode.OP_DROP;
 };
 
 export const generateHashLockScript = async (

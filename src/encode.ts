@@ -31,3 +31,25 @@ export const bytesToBase64 = async (bytes: Uint8Array): Promise<string> => {
 export const base64ToBytes = async (str: string): Promise<Uint8Array> => {
   return Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
 };
+
+export const scriptNum = async (num: number): Promise<string> => {
+  const abs = Math.abs(num);
+  if (abs <= 0x7f) {
+    num = num > 0 ? num : abs + 0x80;
+    return await reverseHex(await padZeroHexN(num.toString(16), 2));
+  } else if (abs <= 0x7fff) {
+    num = num > 0 ? num : abs + 0x8000;
+    return await reverseHex(await padZeroHexN(num.toString(16), 4));
+  } else if (abs <= 0x7fffff) {
+    num = num > 0 ? num : abs + 0x800000;
+    return await reverseHex(await padZeroHexN(num.toString(16), 6));
+  } else if (abs <= 0x7fffffff) {
+    num = num > 0 ? num : abs + 0x80000000;
+    return await reverseHex(await padZeroHexN(num.toString(16), 8));
+  } else if (abs <= 0x7fffffffff) {
+    num = num > 0 ? num : abs + 0x8000000000;
+    return await reverseHex(await padZeroHexN(num.toString(16), 10));
+  } else {
+    throw new Error('Number can be maximum 5 byte int');
+  }
+};
