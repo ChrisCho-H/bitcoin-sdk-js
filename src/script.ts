@@ -4,7 +4,7 @@ import { bech32, bech32m } from 'bech32';
 import { Opcode } from './opcode.js';
 import { sha256, hash160, hash256 } from './crypto.js';
 import { pushData } from './data.js';
-import { padZeroHexN, scriptNum } from './encode.js';
+import { scriptNum } from './encode.js';
 import { Validator } from './validator.js';
 
 export const getScriptByAddress = async (address: string): Promise<string> => {
@@ -85,6 +85,8 @@ export const generateMultiSigScript = async (
   pubkeys: string[],
   type: 'legacy' | 'segwit' | 'taproot' = 'segwit',
 ): Promise<string> => {
+  if (privkeyCount <= 0 || pubkeys.length === 0)
+    throw new Error('Both priv key and pub key count must be positive number');
   let multiSigScript: string = '';
   if (type !== 'taproot') {
     if (privkeyCount > 15 || pubkeys.length > 15)
@@ -98,9 +100,9 @@ export const generateMultiSigScript = async (
 
     // multi sig type of p2sh script
     multiSigScript +=
-      (0x50 + privkeyCount).toString(16) + // m signatures(OP_M)
+      (await scriptNum(privkeyCount)) + // m signatures(OP_M)
       pubkeyJoin +
-      (0x50 + pubkeys.length).toString(16) + // n pubkeys(OP_N)
+      (await scriptNum(pubkeys.length)) + // n pubkeys(OP_N)
       Opcode.OP_CHECKMULTISIG;
   } else {
     if (privkeyCount > 999 || pubkeys.length > 999)
@@ -116,17 +118,13 @@ export const generateMultiSigScript = async (
     }); // OP_CHECKSIGADD enabled for tapscript bip342
 
     // get priv count in hex
-    let privkeyCountHex: string = privkeyCount.toString(16);
-    privkeyCountHex = await padZeroHexN(
-      privkeyCountHex,
-      privkeyCountHex.length < 3 ? 2 : 4,
-    );
+    const privkeyCountHex: string = await scriptNum(privkeyCount);
+    const dataToRead: string =
+      privkeyCount <= 16 ? '' : await pushData(privkeyCountHex);
 
     // multi sig type of tapscript(OP_CHECKSIGADD)
     multiSigScript +=
-      (await pushData(privkeyCountHex)) +
-      privkeyCountHex +
-      Opcode.OP_GREATERTHANOREQUAL;
+      dataToRead + privkeyCountHex + Opcode.OP_GREATERTHANOREQUAL;
   }
   return multiSigScript;
 };
@@ -137,9 +135,10 @@ export const generateTimeLockScript = async (
   await Validator.validateBlockLock(block);
 
   const locktime: string = await scriptNum(block);
+  const dataToRead: string = block <= 16 ? '' : await pushData(locktime);
 
   const opcode: string = Opcode.OP_CHECKLOCKTIMEVERIFY;
-  return (await pushData(locktime)) + locktime + opcode + Opcode.OP_DROP;
+  return dataToRead + locktime + opcode + Opcode.OP_DROP;
 };
 
 export const generateHashLockScript = async (

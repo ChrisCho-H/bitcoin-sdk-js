@@ -3,6 +3,7 @@ import {
   hexToBytes as _hexToBytes,
   utf8ToBytes as _utf8ToBytes,
 } from '@noble/hashes/utils';
+import { Opcode } from './opcode.js';
 
 export const padZeroHexN = async (hex: string, n: number): Promise<string> => {
   return hex.padStart(n, '0');
@@ -33,6 +34,11 @@ export const base64ToBytes = async (str: string): Promise<Uint8Array> => {
 };
 
 export const scriptNum = async (num: number): Promise<string> => {
+  // bip62 number push
+  if (num === 0) return Opcode.OP_0;
+  if (num >= 1 && num <= 16) return (0x50 + num).toString(16);
+  if (num === -1) return Opcode.OP_1NEGATE;
+
   const abs = Math.abs(num);
   if (abs <= 0x7f) {
     num = num > 0 ? num : abs + 0x80;
