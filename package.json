@@ -1,6 +1,6 @@
 {
   "name": "bitcoin-sdk-js",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Bitcoin Smart Contract SDK for Node, Browser and Mobile.",
   "type": "module",
   "keywords": [
@@ -67,5 +67,6 @@
   },
   "module": "./lib/esm/index.mjs",
   "types": "./lib/esm/index.d.mts",
-  "sideEffects": false
+  "sideEffects": false,
+  "license": "MIT"
 }
