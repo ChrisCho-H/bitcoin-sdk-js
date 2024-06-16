@@ -73,3 +73,25 @@ describe('reverse hex test', () => {
     }
   });
 });
+
+describe('script num test', () => {
+  it('script number should follow bip62 rules', async () => {
+    // Given
+    const zero = 0;
+    const minusOne = -1;
+    const numMinimal = Math.floor(Math.random() * (16 - 1 + 1) + 1);
+
+    // When
+    const scriptNumZero: string = await bitcoin.encode.scriptNum(zero);
+    const scriptNumMinusOne: string = await bitcoin.encode.scriptNum(minusOne);
+    const scriptNumMinimal: string = await bitcoin.encode.scriptNum(numMinimal);
+
+    // Then
+    assert.strictEqual(scriptNumZero, bitcoin.Opcode.OP_0);
+    assert.strictEqual(scriptNumMinusOne, bitcoin.Opcode.OP_1NEGATE);
+    assert.strictEqual(
+      scriptNumMinimal,
+      (Number('0x' + bitcoin.Opcode.OP_1) + numMinimal - 1).toString(16),
+    );
+  });
+});
