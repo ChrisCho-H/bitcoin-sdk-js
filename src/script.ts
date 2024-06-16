@@ -123,8 +123,7 @@ export const generateMultiSigScript = async (
       privkeyCount <= 16 ? '' : await pushData(privkeyCountHex);
 
     // multi sig type of tapscript(OP_CHECKSIGADD)
-    multiSigScript +=
-      dataToRead + privkeyCountHex + Opcode.OP_GREATERTHANOREQUAL;
+    multiSigScript += dataToRead + privkeyCountHex + Opcode.OP_NUMEQUAL;
   }
   return multiSigScript;
 };
