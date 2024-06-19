@@ -1,6 +1,6 @@
 ## bitcoin-sdk-js
 
-**✨Bitcoin Smart Contact SDK for Node, Browser and Mobile✨**
+**✨ Bitcoin TypeScript/JavaScript Library for NodeJS, Browser and Mobile ✨**
 
 _Bitcoin is hard. Especially for those not familiar with crypto, it is even hard
 to create a simple bitcoin transaction._
