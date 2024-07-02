@@ -19,6 +19,11 @@ npm install bitcoin-sdk-js
 
 import * as bitcoin from 'bitcoin-sdk-js';
 
+// if you need to generate key pair
+const keyPair = await bitcoin.wallet.generateKeyPair();
+const pubkey = keyPair.publicKey;
+const privkey = keyPair.privateKey;
+
 // initialize Bitcoin Transaction object
 const tx = new bitcoin.Transaction();
 
@@ -95,7 +100,7 @@ await tx.addOutput({
 } as bitcoin.Target);
 
 // if transaction use timelock input, must set tx locktime bigger than input timelock
-tx.setLocktime(2542622);
+await tx.setLocktime(2542622);
 
 // if input utxo only requires single sig(p2wpkh or p2pkh)
 await tx.signInput(privkey, 0);
@@ -165,7 +170,12 @@ const HTLC = bitcoin.Opcode.OP_IF +
 const toAddress = await bitcoin.address.generateScriptAddress(HTLC);
 
 // Then, can be spent as an input by signing by scriptSig!
-await tx.setLocktime(2576085); // if transaction use timelock input, must set tx locktime bigger than input timelock
+// initialize Bitcoin Transaction object
+const tx = new bitcoin.Transaction();
+
+// if transaction use timelock input, must set tx locktime bigger than input timelock
+await tx.setLocktime(2576085); 
+
 // spend by executing OP_IF branch
 await tx.signInputByScriptSig(
     // script sig list(order matters!!! bitcoin script is stack-based LIFO)
@@ -210,6 +220,7 @@ const txToBroadcast: string = await tx.getSignedHex();
 ### Taproot and Tapscript spend
 ``` javascript
 
+
 import * as bitcoin from 'bitcoin-sdk-js';
 
 // Let's send and spend above HTLC in taproot and tapscript way!
@@ -217,8 +228,9 @@ import * as bitcoin from 'bitcoin-sdk-js';
   Schnorr key is same with any bitcoin key pair, except it does not use public key prefix byte '02' or '03'.
   This key pair will be used as a master key to spend UTXO in taproot, after tweaked(will explain how to step by step).
 */
-const schnorrPubkey = (await bitcoin.wallet.generateKeyPair()).publicKey.slice(2); // remove first byte (which is parity bit)
-const schnorrPrivkey = (await bitcoin.wallet.generateKeyPair()).privateKey;
+const keyPair = await bitcoin.wallet.generateKeyPair();
+const schnorrPubkey = keyPair.publicKey.slice(2); // remove first byte (which is parity bit)
+const schnorrPrivkey = keyPair.privateKey;
 
 /*
   HTLC consists of conditional branch, in which OP_IF contains Time Lock Contract and OP_ELSE contains Hash Lock.
@@ -227,13 +239,13 @@ const schnorrPrivkey = (await bitcoin.wallet.generateKeyPair()).privateKey;
 // Originally OP_IF branch Time Lock Contract
 const timeLockContract =
     (await bitcoin.script.generateTimeLockScript(2576085)) +
-    (await bitcoin.data.pushData(schnorrPubkey1) + // must specify data to read(if not opcode)
+    (await bitcoin.data.pushData(schnorrPubkey1)) + // must specify data to read(if not opcode)
     schnorrPubkey1 + // you must use schnorr key even in tapscript
     bitcoin.Opcode.OP_CHECKSIG;
 // Originally OP_ELSE branch Hash Lock Contract
 const hashLockContract =
     (await bitcoin.script.generateHashLockScript('abcdef')) +
-    (await bitcoin.data.pushData(schnorrPubkey2) + // must specify data to read(if not opcode)
+    (await bitcoin.data.pushData(schnorrPubkey2)) + // must specify data to read(if not opcode)
     schnorrPubkey2 + // you must use schnorr key even in tapscript
     bitcoin.Opcode.OP_CHECKSIG;
 
@@ -258,7 +270,10 @@ const tapTweakedPubkey = await bitcoin.tapscript.getTapTweakedPubkey(
 // generate taproot address with taproot key(and send to it!)
 const toAddress = await bitcoin.address.generateAddress(tapTweakedPubkey.tweakedPubKey, 'taproot');
 
+// initialize Bitcoin Transaction object
+const tx = new bitcoin.Transaction();
 
+await tx.setLocktime(2576085); // if transaction use timelock input, must set tx locktime bigger than input timelock
 
 // Then, can be spent as an input!
 // one thing to keep in mind, taproot or tapscript spend needs to provide all the script public key of input
@@ -268,8 +283,6 @@ await tx.addInput({
     value: value,
     script: await bitcoin.script.getScriptByAddress(toAddress),
 });
-
-await tx.setLocktime(2576085); // if transaction use timelock input, must set tx locktime bigger than input timelock
 
 // taproot spend? just sign input with tweaked schnorr key(which is, taproot private key)
 await tx.signInput(
