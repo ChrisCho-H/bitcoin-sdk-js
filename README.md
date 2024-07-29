@@ -15,6 +15,7 @@ including **advanced smart contract like multisig, hashlock, timelock, combinati
 npm install bitcoin-sdk-js
 ```
 ## How To Use
+#### 1. Transaction for Single Signer(P2WPKH)
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -27,7 +28,7 @@ const privkey = keyPair.privateKey;
 // initialize Bitcoin Transaction object
 const tx = new bitcoin.Transaction();
 
-// add UTXO to spend as input
+// add UTXO to spend as an input
 await tx.addInput({
   txHash: txId, // transaction id of utxo
   index: 0, // index of utxo in transaction
@@ -41,6 +42,29 @@ await tx.addOutput({
     value: value - fee, // value of utxo - fee
 } as bitcoin.Target);
 
+// if input utxo only requires single sig(p2wpkh or p2pkh)
+await tx.signInput(privkey, 0);
+
+// You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
+const txToBroadcast: string = await tx.getSignedHex();
+
+```
+#### 2. Transaction for Multi Signer(P2WSH)
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js';
+
+// initialize Bitcoin Transaction object
+const tx = new bitcoin.Transaction();
+
+// add UTXO to spend as an input
+await tx.addInput({
+  txHash: txId, // transaction id of utxo
+  index: 0, // index of utxo in transaction
+  value: value, // value of utxo(unit is satoshi)
+} as bitcoin.UTXO);
+
+// add Target output to send Bitcoin
 // sends bitcoin to 2-of-3 multisig transaction
 await tx.addOutput({
     // all the smart contract output is recommended to use script address!
@@ -51,6 +75,34 @@ await tx.addOutput({
     value: value - fee, // value of utxo - fee
 } as bitcoin.Target);
 
+// if input utxo requires multi sig(p2wsh or p2sh)
+await tx.multiSignInput(
+    [pubkey1, pubkey2, pubkey3],
+    [privkey1, privkey2],
+    0, // input index to sign
+);
+
+// You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
+const txToBroadcast: string = await tx.getSignedHex();
+
+```
+
+#### 3. Transaction for Single(or Multi) Signer with TimeLock (or || and) HashLock(P2WSH)
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js';
+
+// initialize Bitcoin Transaction object
+const tx = new bitcoin.Transaction();
+
+// add UTXO to spend as an input
+await tx.addInput({
+  txHash: txId, // transaction id of utxo
+  index: 0, // index of utxo in transaction
+  value: value, // value of utxo(unit is satoshi)
+} as bitcoin.UTXO);
+
+// add Target output to send Bitcoin
 // sends bitcoin to single(or multi) sig script with timelock
 await tx.addOutput({
     address: await bitcoin.address.generateScriptAddress(
@@ -89,6 +141,47 @@ await tx.addOutput({
     value: value - fee, // value of utxo - fee
 } as bitcoin.Target);
 
+// if transaction use timelock input, must set tx locktime bigger than input timelock
+await tx.setLocktime(2542622);
+
+// if input utxo requires single sig with smart contract(p2wsh or p2sh)
+await tx.signInput(
+    privkey,
+    0, // input index to sign
+    'segwit', // default is segwit, you might use legacy if necessary
+    await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
+    'secret', // is hashlock input? provide secret to unlock
+);
+
+// or if input utxo requires multi sig with smart contract(p2wsh or p2sh)
+await tx.multiSignInput(
+    [pubkey1, pubkey2, pubkey3],
+    [privkey1, privkey2],
+    0, // input index to sign
+    'segwit', // default is segwit, you might use legacy if necessary
+    await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
+    'secret', // is hashlock input? provide secret to unlock
+);
+
+// You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
+const txToBroadcast: string = await tx.getSignedHex();
+```
+#### 4. Transaction for TimeLock (or || and) HashLock without Signer(P2WSH)
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js';
+
+// initialize Bitcoin Transaction object
+const tx = new bitcoin.Transaction();
+
+// add UTXO to spend as an input
+await tx.addInput({
+  txHash: txId, // transaction id of utxo
+  index: 0, // index of utxo in transaction
+  value: value, // value of utxo(unit is satoshi)
+} as bitcoin.UTXO);
+
+// add Target output to send Bitcoin
 // sends bitcoin to script with timelock + hashlock (no sig required)
 await tx.addOutput({
     address: await bitcoin.address.generateScriptAddress(
@@ -102,43 +195,10 @@ await tx.addOutput({
 // if transaction use timelock input, must set tx locktime bigger than input timelock
 await tx.setLocktime(2542622);
 
-// if input utxo only requires single sig(p2wpkh or p2pkh)
-await tx.signInput(privkey, 0);
-
-// or if input utxo only requires multi sig(p2wsh or p2sh)
-await tx.multiSignInput(
-    [pubkey1, pubkey2, pubkey3],
-    [privkey1, privkey2],
-    0, // input index to sign
-);
-
-// or if input utxo requires single sig with smart contract(p2wsh or p2sh)
-await tx.signInput(
-    privkey,
-    0, // input index to sign
-    // below are optional, use to sign legacy utxo or unlock smart contract utxo
-    'segwit', // default is segwit, you might use legacy if necessary
-    await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secret', // is hashlock input? provide secret to unlock
-);
-
-
-// or if input utxo requires multi sig with smart contract(p2wsh or p2sh)
-await tx.multiSignInput(
-    [pubkey1, pubkey2, pubkey3],
-    [privkey1, privkey2],
-    0, // input index to sign
-    // below are optional, use to sign legacy utxo or unlock smart contract utxo
-    'segwit', // default is segwit, you might use legacy if necessary
-    await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secret', // is hashlock input? provide secret to unlock
-);
-
-// or if input utxo requires unlock hash with smart contract(p2wsh or p2sh)
+// if input utxo requires to unlock hash with smart contract(p2wsh or p2sh)
 await tx.unlockHashInput(
     'secret',
     0,
-    // below are optional, use to unlock legacy utxo or timlock utxo with hashlock
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622),// is timelock input? provide script
 );
