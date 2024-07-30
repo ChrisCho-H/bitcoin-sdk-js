@@ -32,7 +32,7 @@ export const varIntToNumber = async (varInt: string): Promise<number> => {
   if (varInt.length === 2) {
     return Number('0x' + varInt);
   } else {
-    return Number('0x' + varInt.slice(2));
+    return Number('0x' + (await reverseHex(varInt.slice(2))));
   }
 };
 
