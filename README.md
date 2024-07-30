@@ -118,7 +118,7 @@ await tx.addOutput({
 await tx.addOutput({
     address: await bitcoin.address.generateScriptAddress(
         // able to spend this output if 'secret' is given
-        (await bitcoin.script.generateHashLockScript('secret')) + 
+        (await bitcoin.script.generateHashLockScript('secretHex')) + 
         // you can use generateMultiSigScript instead of single sig here
         (await bitcoin.script.generateSingleSigScript(pubkey)),
     ),
@@ -134,7 +134,7 @@ await tx.addOutput({
         to spend this output with bitcoin-sdk-js
         */
         (await bitcoin.script.generateTimeLockScript(2542622)) +
-        (await bitcoin.script.generateHashLockScript('secret')) +
+        (await bitcoin.script.generateHashLockScript('secretHex')) +
         // you can use generateMultiSigScript instead of single sig here
         (await bitcoin.script.generateSingleSigScript(pubkey)),
     ),
@@ -150,7 +150,7 @@ await tx.signInput(
     0, // input index to sign
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secret', // is hashlock input? provide secret to unlock
+    'secretHex', // is hashlock input? provide secret to unlock
 );
 
 // or if input utxo requires multi sig with smart contract(p2wsh or p2sh)
@@ -160,7 +160,7 @@ await tx.multiSignInput(
     0, // input index to sign
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secret', // is hashlock input? provide secret to unlock
+    'secretHex', // is hashlock input? provide secret to unlock
 );
 
 // You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
@@ -187,7 +187,7 @@ await tx.addOutput({
     address: await bitcoin.address.generateScriptAddress(
         // if you only want hashlock, you can remove generateTimeLockScript
         (await bitcoin.script.generateTimeLockScript(2542622)) +
-        (await bitcoin.script.generateHashLockScript('secret')),   
+        (await bitcoin.script.generateHashLockScript('secretHex')),   
     ),
     value: value - fee, // value of utxo - fee
 } as bitcoin.Target);
@@ -197,7 +197,7 @@ await tx.setLocktime(2542622);
 
 // if input utxo requires to unlock hash with smart contract(p2wsh or p2sh)
 await tx.unlockHashInput(
-    'secret',
+    'secretHex',
     0,
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622),// is timelock input? provide script
