@@ -15,7 +15,111 @@ including **advanced smart contract like multisig, hashlock, timelock, combinati
 npm install bitcoin-sdk-js
 ```
 ## How To Use
-#### 1. Transaction for Single Signer(P2WPKH)
+- [Generate Address](#generate-address-p2pkh-p2wpkh-p2sh-p2wsh-p2tr)
+  - [Address for Single Signer(P2PKH, P2WPKH, P2TR)](#1-address-for-single-signerp2pkh-p2wpkh-p2tr)
+  - [Address for Script(P2SH, P2WSH)](#2-address-for-scriptp2sh-p2wsh)
+- [Create Transaction](#create-transaction-p2pkh-p2wpkh-p2sh-p2wsh-p2tr)
+  - [Transaction for Single Signer(P2PKH, P2WPKH)](#1-transaction-for-single-signerp2pkh-p2wpkh)
+  - [Transaction for Multi Signer(P2SH, P2WSH)](#2-transaction-for-multi-signerp2sh-p2wsh)
+  - [Transaction for Single(or Multi) Signer with TimeLock (or || and) HashLock(P2SH, P2WSH)](#3-transaction-for-singleor-multi-signer-with-timelock-or--and-hashlockp2sh-p2wsh)
+  - [Transaction for TimeLock (or || and) HashLock without Signer(P2SH, P2WSH)](#4-transaction-for-timelock-or--and-hashlock-without-signerp2sh-p2wsh)
+  - [Custom smart contract(P2SH, P2WSH)](#5-custom-smart-contractp2sh-p2wsh)
+  - [Taproot and Tapscript spend(P2TR)](#6-taproot-and-tapscript-spendp2tr)
+- [Sign Message and Verify Signature - BIP322 (P2PKH, P2WPKH, P2TR)](#sign-message-and-verify-signature---bip322-p2pkh-p2wpkh-p2tr)
+### Generate Address (P2PKH, P2WPKH, P2SH, P2WSH, P2TR)
+#### 1. Address for Single Signer(P2PKH, P2WPKH, P2TR)
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js'
+
+// if you need to generate key pair
+const keyPair = await bitcoin.wallet.generateKeyPair();
+// p2pkh
+const legacyAddress = await bitcoin.address.generateAddress(
+  keyPair.publicKey,
+  'legacy',
+);
+// p2wpkh
+const segwitAddress = await bitcoin.address.generateAddress(
+  keyPair.publicKey,
+  'segwit',
+);
+// p2tr
+const taprootAddress = await bitcoin.address.generateAddress(
+  (
+    // It's recommended to tweak public key to generate taproot address
+    await bitcoin.tapscript.getTapTweakedPubkey(
+      // Schnorr key is same with any bitcoin key pair, except it does not use public key prefix byte '02' or '03'.
+      keyPair.publicKey.slice(2),
+      await bitcoin.tapscript.getTapTweak(keyPair.publicKey.slice(2)),
+    )
+  ).tweakedPubKey,
+  'taproot',
+);
+// p2pkh - testnet
+const legacyAddressTestnet = await bitcoin.address.generateAddress(
+  keyPair.publicKey,
+  'legacy',
+  'testnet',
+);
+// p2wpkh - testnet
+const segwitAddressTestnet = await bitcoin.address.generateAddress(
+  keyPair.publicKey,
+  'segwit',
+  'testnet',
+);
+// p2tr - testnet
+const taprootAddressTestnet = await bitcoin.address.generateAddress(
+  (
+    // It's recommended to tweak public key to generate taproot address
+    await bitcoin.tapscript.getTapTweakedPubkey(
+      // Schnorr key is same with any bitcoin key pair, except it does not use public key prefix byte '02' or '03'.
+      keyPair.publicKey.slice(2),
+      await bitcoin.tapscript.getTapTweak(keyPair.publicKey.slice(2)),
+    )
+  ).tweakedPubKey,
+  'taproot',
+  'testnet',
+);
+
+```
+#### 2. Address for Script(P2SH, P2WSH)
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js'
+
+// if you need to generate key pair
+const keyPair = await bitcoin.wallet.generateKeyPair();
+// Script can be any of bitcoin script opcode! bitcoin-sdk-js provides an easy way to build script.
+// Below script is timelock + single sig
+const script = 
+      await bitcoin.script.generateTimeLockScript(2542622) + await bitcoin.script.generateSingleSigScript(keyPair.publicKey);
+// p2sh
+const legacyScriptAddress = await bitcoin.address.generateScriptAddress(
+  script,
+  'legacy',
+);
+// p2wsh
+const segwitScriptAddress = await bitcoin.address.generateScriptAddress(
+  script,
+  'segwit',
+);
+// p2sh - testnet
+const legacyScriptAddressTestnet = await bitcoin.address.generateScriptAddress(
+  script,
+  'legacy',
+  'testnet',
+);
+// p2wsh - testnet
+const segwitScriptAddressTestnet = await bitcoin.address.generateScriptAddress(
+  script,
+  'segwit',
+  'testnet',
+);
+
+```
+### Create Transaction (P2PKH, P2WPKH, P2SH, P2WSH, P2TR)
+#### 1. Transaction for Single Signer(P2PKH, P2WPKH)
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -49,7 +153,7 @@ await tx.signInput(privkey, 0);
 const txToBroadcast: string = await tx.getSignedHex();
 
 ```
-#### 2. Transaction for Multi Signer(P2WSH)
+#### 2. Transaction for Multi Signer(P2SH, P2WSH)
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -87,7 +191,7 @@ const txToBroadcast: string = await tx.getSignedHex();
 
 ```
 
-#### 3. Transaction for Single(or Multi) Signer with TimeLock (or || and) HashLock(P2WSH)
+#### 3. Transaction for Single(or Multi) Signer with TimeLock (or || and) HashLock(P2SH, P2WSH)
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -117,7 +221,7 @@ await tx.addOutput({
 // sends bitcoin to single(or multi) sig script with hashlock
 await tx.addOutput({
     address: await bitcoin.address.generateScriptAddress(
-        // able to spend this output if 'secret' is given
+        // able to spend this output if 'secretHex' is given
         (await bitcoin.script.generateHashLockScript('secretHex')) + 
         // you can use generateMultiSigScript instead of single sig here
         (await bitcoin.script.generateSingleSigScript(pubkey)),
@@ -150,7 +254,7 @@ await tx.signInput(
     0, // input index to sign
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secretHex', // is hashlock input? provide secret to unlock
+    'secretHex', // is hashlock input? provide secretHex to unlock
 );
 
 // or if input utxo requires multi sig with smart contract(p2wsh or p2sh)
@@ -160,13 +264,13 @@ await tx.multiSignInput(
     0, // input index to sign
     'segwit', // default is segwit, you might use legacy if necessary
     await bitcoin.script.generateTimeLockScript(2542622), // is timelock input? provide script
-    'secretHex', // is hashlock input? provide secret to unlock
+    'secretHex', // is hashlock input? provide secretHex to unlock
 );
 
 // You can broadcast signed tx here: https://blockstream.info/testnet/tx/push
 const txToBroadcast: string = await tx.getSignedHex();
 ```
-#### 4. Transaction for TimeLock (or || and) HashLock without Signer(P2WSH)
+#### 4. Transaction for TimeLock (or || and) HashLock without Signer(P2SH, P2WSH)
 ``` javascript
 
 import * as bitcoin from 'bitcoin-sdk-js';
@@ -207,9 +311,7 @@ await tx.unlockHashInput(
 const txToBroadcast: string = await tx.getSignedHex();
 
 ```
-
-## Advanced feature
-### Custom smart contract
+#### 5. Custom smart contract(P2SH, P2WSH)
 You might use tapscript for this!
 ``` javascript
 
@@ -277,7 +379,7 @@ const txToBroadcast: string = await tx.getSignedHex();
 
 ```
 
-### Taproot and Tapscript spend
+#### 6. Taproot and Tapscript spend(P2TR)
 ``` javascript
 
 
@@ -375,6 +477,55 @@ const txToBroadcast: string = await tx.getSignedHex();
 
 ```
 
+### Sign Message and Verify Signature - BIP322 (P2PKH, P2WPKH, P2TR)
+
+``` javascript
+
+import * as bitcoin from 'bitcoin-sdk-js'
+
+// if you need to generate key pair
+const keyPair = await bitcoin.wallet.generateKeyPair();
+const pubkey = keyPair.publicKey;
+const privkey = keyPair.privateKey;
+
+// address to verify(legacy p2pkh, segwit p2wpkh, taproot p2tr are all supported!)
+const legacyAddress = await bitcoin.address.generateAddress(
+  pubkey,
+  'legacy',
+);
+const segwitAddress = await bitcoin.address.generateAddress(
+  pubkey,
+  'segwit',
+);
+const tapAddress = await bitcoin.address.generateAddress(
+  (
+    await bitcoin.tapscript.getTapTweakedPubkey(
+      pubkey.slice(2),
+      await bitcoin.tapscript.getTapTweak(pubkey.slice(2)),
+    )
+  ).tweakedPubKey,
+  'taproot',
+);
+// message to sign
+const msg = "message to sign";
+// sign messsage with private key and address
+const sigLegacy = await bitcoin.crypto.signMessage(
+  msg,
+  privkey,
+  legacyAddress,
+);
+const sigSegwit = await bitcoin.crypto.signMessage(
+  msg,
+  privkey,
+  segwitAddress,
+);
+const sigTap = await bitcoin.crypto.signMessage(msg, privkey, tapAddress);
+// verify signature from address, returning boolean.
+await bitcoin.crypto.verifyMessage(msg, sigLegacy, legacyAddress);
+await bitcoin.crypto.verifyMessage(msg, sigSegwit, segwitAddress);
+await bitcoin.crypto.verifyMessage(msg, sigTap, tapAddress);
+
+```
 
 
 
