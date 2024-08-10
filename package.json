@@ -1,7 +1,7 @@
 {
   "name": "bitcoin-sdk-js",
-  "version": "1.0.0",
-  "description": "Bitcoin Smart Contract SDK for Node, Browser and Mobile.",
+  "version": "1.0.1",
+  "description": "Bitcoin TypeScript/JavaScript Library for Node, Browser and Mobile.",
   "type": "module",
   "keywords": [
     "bitcoin",
