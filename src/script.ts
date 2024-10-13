@@ -89,8 +89,10 @@ export const generateMultiSigScript = async (
     throw new Error('Both priv key and pub key count must be positive number');
   let multiSigScript: string = '';
   if (type !== 'taproot') {
-    if (privkeyCount > 15 || pubkeys.length > 15)
+    if (type === 'legacy' && (privkeyCount > 15 || pubkeys.length > 15))
       throw new Error('Maximum number of keys is 15');
+    if (type === 'segwit' && (privkeyCount > 20 || pubkeys.length > 20))
+      throw new Error('Maximum number of keys is 20');
 
     const pubkeyJoin: string =
       '21' + // first pubkey bytes to read
