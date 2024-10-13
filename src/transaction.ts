@@ -262,8 +262,8 @@ export class Transaction {
     keyVersion = '00',
   ): Promise<Uint8Array> => {
     await this._validateInputRange(index);
-    if (type === 'legacy' || type === 'segwit')
-      await Validator.validateRedeemScript(redeemScript);
+    if (type === 'legacy') await Validator.validateRedeemScript(redeemScript);
+    if (type === 'segwit') await Validator.validateWitnessScript(redeemScript);
 
     await this._finalize(type);
     // op_pushdata and length in hex
@@ -320,13 +320,13 @@ export class Transaction {
         scriptSig += (await pushData(sigStack[i])) + sigStack[i];
       }
 
-      // check script sig size
-      await Validator.validateScriptSig(scriptSig);
       // check redeem script size
       const redeemScript: string = sigStack[sigStack.length - 1];
       await Validator.validateRedeemScript(redeemScript);
 
       scriptSig += (await pushData(redeemScript)) + redeemScript;
+      // check script sig size
+      await Validator.validateScriptSig(scriptSig);
 
       await this._setInputScriptSig(index, scriptSig);
     }
