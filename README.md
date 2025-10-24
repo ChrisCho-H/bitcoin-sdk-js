@@ -1,6 +1,8 @@
-## bitcoin-sdk-js
+<div align="center">
+  <img src="./bitcoin-sdk-js-logo.png" width = 300 />
 
 **✨ Bitcoin TypeScript/JavaScript Library for NodeJS, Browser and Mobile ✨**
+</div>
 
 _Bitcoin is hard. Especially for those not familiar with crypto, it is even hard
 to create a simple bitcoin transaction._
